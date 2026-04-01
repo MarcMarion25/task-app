@@ -18,6 +18,9 @@ const [noteText, setNoteText] = useState('')
 const [noteDate, setNoteDate] = useState('')
 const [spec, setSpec] = useState('')
 const [taskId, setTaskId] = useState('')
+const [session, setSession] = useState<any>(null)
+const [email, setEmail] = useState('')
+const [password, setPassword] = useState('')
 
 function getNextDay(dateStr: string) {
   const d = new Date(dateStr)
@@ -59,10 +62,48 @@ useEffect(() => {
   fetchNotes()
 }, [noteDate])
 
+
+useEffect(() => {
+  supabase.auth.getSession().then(({ data }) => {
+    setSession(data.session)
+  })
+
+  const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    setSession(session)
+  })
+
+  return () => {
+    listener.subscription.unsubscribe()
+  }
+}, [])
+
 useEffect(() => {
   const today = new Date().toISOString().split('T')[0]
   setNoteDate(today)
 }, [])
+
+
+async function signIn() {
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password
+  })
+
+  if (error) console.log(error)
+}
+
+async function signUp() {
+  const { error } = await supabase.auth.signUp({
+    email,
+    password
+  })
+
+  if (error) console.log(error)
+}
+
+async function signOut() {
+  await supabase.auth.signOut()
+}
 
 async function addNote() {
   if (!noteText) return
@@ -171,7 +212,38 @@ const filteredTasks = tasks.filter(task => {
   return true
 })
 
+if (!session) {
+  return (
+    <main className="min-h-screen flex items-center justify-center">
+      <div className="bg-white p-6 rounded shadow-md flex flex-col gap-2">
 
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="email"
+          className="border px-2 py-1"
+        />
+
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="password"
+          className="border px-2 py-1"
+        />
+
+        <button onClick={signIn} className="bg-blue-500 text-white px-2 py-1">
+          Login
+        </button>
+
+        <button onClick={signUp} className="bg-gray-300 px-2 py-1">
+          Sign Up
+        </button>
+
+      </div>
+    </main>
+  )
+}
  return (
   
 <main className="min-h-screen bg-gray-100 flex justify-center items-start p-6">
@@ -185,7 +257,18 @@ const filteredTasks = tasks.filter(task => {
         {/* HEADER */}
         <div className="bg-purple-500 text-white  rounded-t-xl px-4 py-2">
           <h1 className="text-lg font-bold text-center">
-            Task Tracker
+            Task Tracker<div className="flex justify-between items-center mb-4">
+  <h1 className="text-xl font-bold">
+    Recipe App 🍳
+  </h1>
+
+  <button
+    onClick={signOut}
+    className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200"
+  >
+    Logout
+  </button>
+</div>
           </h1>
         </div>
 
