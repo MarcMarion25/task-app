@@ -35,7 +35,7 @@ function goToNextDay() {
   d.setDate(d.getDate() + 1)
   setNoteDate(d.toISOString().split('T')[0])
 }
-function createNoteFromTask(task) {
+function createNoteFromTask(task: any) {
   console.log('task selected', task.id)
 
   setTaskId(task.id)
