@@ -88,14 +88,22 @@ useEffect(() => {
 
 
 async function signIn() {
-  const { error } = await supabase.auth.signInWithPassword({
+  console.log("SIGN IN CLICKED")
+
+  const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password
   })
 
-  if (error) console.log(error)
-}
+  console.log("RESULT:", data, error)
 
+  if (error) {
+    console.log("ERROR:", error)
+  } else {
+    console.log("SETTING SESSION")
+    setSession(data.session)
+  }
+}
 async function signUp() {
   const { data, error } = await supabase.auth.signUp({
     email,
