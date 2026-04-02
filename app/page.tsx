@@ -48,6 +48,7 @@ async function fetchNotes() {
 
   setNotes(data || [])
 }
+
 function getNextDay(dateStr: string) {
   const d = parseLocalDate(noteDate)
   d.setDate(d.getDate() + 1)
@@ -65,14 +66,15 @@ function goToNextDay() {
   setNoteDate(formatLocalDate(d))
 }
 function setTodayToTomorrow() {
-const now = new Date()
+  const now = new Date()
 
-const today = new Date(
-  now.getFullYear(),
-  now.getMonth(),
-  now.getDate()
-)
-  const tomorrow = new Date()
+  const today = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  )
+
+  const tomorrow = new Date(today)
   tomorrow.setDate(today.getDate() + 1)
 
   setFromDate(formatLocalDate(today))
