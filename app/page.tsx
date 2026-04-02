@@ -169,6 +169,15 @@ async function signUp() {
   }
 
 
+ 
+ async function signOut() {
+  await supabase.auth.signOut()
+  setSession(null)
+}
+
+
+
+
  async function addTask() {
   if (!newTask) return
 
