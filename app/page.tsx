@@ -88,24 +88,7 @@ useEffect(() => {
 
 
 async function signIn() {
-  console.log("SIGN IN CLICKED")
-
   const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password
-  })
-
-  console.log("RESULT:", data, error)
-
-  if (error) {
-    console.log("ERROR:", error)
-  } else {
-    console.log("SETTING SESSION")
-    setSession(data.session)
-  }
-}
-async function signUp() {
-  const { data, error } = await supabase.auth.signUp({
     email,
     password
   })
@@ -116,7 +99,19 @@ async function signUp() {
     setSession(data.session)
   }
 }
-async function addNote() {
+async function signUp() {
+  const { error } = await supabase.auth.signUp({
+    email,
+    password
+  })
+
+  if (error) {
+    console.log(error)
+  } else {
+    // 👇 immediately try login after signup
+    await signIn()
+  }
+}async function addNote() {
   if (!noteText) return
 
   await supabase.from('dailynotes').insert([
