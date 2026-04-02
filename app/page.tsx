@@ -23,6 +23,11 @@ const [email, setEmail] = useState('')
 const [password, setPassword] = useState('')
 const [loading, setLoading] = useState(true)
 
+function parseLocalDate(dateStr: string) {
+  const [year, month, day] = dateStr.split('-')
+  return new Date(Number(year), Number(month) - 1, Number(day))
+}
+
 
 function createNoteFromTask(task: any) {
   console.log('task selected', task.id)
@@ -44,18 +49,18 @@ async function fetchNotes() {
   setNotes(data || [])
 }
 function getNextDay(dateStr: string) {
-  const d = new Date(dateStr)
+  const d = parseLocalDate(noteDate)
   d.setDate(d.getDate() + 1)
   return formatLocalDate(d)
 }
 function goToPreviousDay() {
-  const d = new Date(noteDate)
+  const d = parseLocalDate(noteDate)
   d.setDate(d.getDate() - 1)
   setNoteDate(formatLocalDate(d))
 }
 
 function goToNextDay() {
-  const d = new Date(noteDate)
+ const d = parseLocalDate(noteDate)
   d.setDate(d.getDate() + 1)
   setNoteDate(formatLocalDate(d))
 }
@@ -179,17 +184,6 @@ function updateLocalTask(id, field, value) {
   )
 }
  
-function setTodayToTomorrow() {
-  const today = new Date()
-  const tomorrow = new Date()
-  tomorrow.setDate(today.getDate() + 1)
-
-  const format = (d: Date) => d.toISOString().split('T')[0]
-
-  setFromDate(format(today))
-  setToDate(format(tomorrow))
-}
-
 async function updateTask(task) {
   await supabase
     .from('tasks')
@@ -495,12 +489,12 @@ if (!session) {
   {/* DATE */}
   <div className="text-lg font-semibold text-gray-700 text-center">
     {noteDate &&
-      new Date(noteDate).toLocaleDateString(undefined, {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      })}
+      parseLocalDate(noteDate).toLocaleDateString(undefined, {
+  weekday: 'long',
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric'
+})}
   </div>
 
   {/* RIGHT ARROW */}
