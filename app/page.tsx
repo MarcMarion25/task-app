@@ -65,6 +65,34 @@ function goToNextDay() {
   setNoteDate(formatLocalDate(d))
 }
 
+useEffect(() => {
+  fetchNotes()
+}, [noteDate])
+useEffect(() => {
+  const getSession = async () => {
+    const { data } = await supabase.auth.getSession()
+    setSession(data.session)
+    setLoading(false)
+  }
+
+  getSession()
+
+
+
+  return () => {
+    listener.subscription.unsubscribe()
+  }
+}, [])
+useEffect(() => {
+  const today = new Date().toLocaleDateString('en-CA').split('T')[0]
+  setNoteDate(today)
+}, [])
+useEffect(() => {
+  setNoteDate(formatLocalDate(new Date()))
+}, [])
+  const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    setSession(session)
+  })
 
 function setTodayToTomorrow() {
   console.log("BUTTON CLICKED")
@@ -87,35 +115,7 @@ function setTodayToTomorrow() {
   setFromDate(formatLocalDate(today))
   setToDate(formatLocalDate(tomorrow))
 }
-useEffect(() => {
-  fetchNotes()
-}, [noteDate])
 
-
-useEffect(() => {
-  const getSession = async () => {
-    const { data } = await supabase.auth.getSession()
-    setSession(data.session)
-    setLoading(false)
-  }
-
-  getSession()
-
-  const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-    setSession(session)
-  })
-
-  return () => {
-    listener.subscription.unsubscribe()
-  }
-}, [])
-useEffect(() => {
-  const today = new Date().toLocaleDateString('en-CA').split('T')[0]
-  setNoteDate(today)
-}, [])
-useEffect(() => {
-  setNoteDate(formatLocalDate(new Date()))
-}, [])
 
 function formatLocalDate(d: Date) {
   return d.toLocaleDateString('en-CA') // YYYY-MM-DD
