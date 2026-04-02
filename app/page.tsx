@@ -28,7 +28,7 @@ function parseLocalDate(dateStr: string) {
   return new Date(Number(year), Number(month) - 1, Number(day))
 }
 
-
+console.log(new Date().toString())
 function createNoteFromTask(task: any) {
   console.log('task selected', task.id)
 
