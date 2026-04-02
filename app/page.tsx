@@ -65,7 +65,13 @@ function goToNextDay() {
   setNoteDate(formatLocalDate(d))
 }
 function setTodayToTomorrow() {
-  const today = new Date()
+const now = new Date()
+
+const today = new Date(
+  now.getFullYear(),
+  now.getMonth(),
+  now.getDate()
+)
   const tomorrow = new Date()
   tomorrow.setDate(today.getDate() + 1)
 
