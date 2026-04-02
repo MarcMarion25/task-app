@@ -21,6 +21,7 @@ const [taskId, setTaskId] = useState('')
 const [session, setSession] = useState<any>(null)
 const [email, setEmail] = useState('')
 const [password, setPassword] = useState('')
+const [loading, setLoading] = useState(true)
 
 function getNextDay(dateStr: string) {
   const d = new Date(dateStr)
@@ -64,9 +65,13 @@ useEffect(() => {
 
 
 useEffect(() => {
-  supabase.auth.getSession().then(({ data }) => {
+  const getSession = async () => {
+    const { data } = await supabase.auth.getSession()
     setSession(data.session)
-  })
+    setLoading(false)
+  }
+
+  getSession()
 
   const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
     setSession(session)
@@ -76,7 +81,6 @@ useEffect(() => {
     listener.subscription.unsubscribe()
   }
 }, [])
-
 useEffect(() => {
   const today = new Date().toISOString().split('T')[0]
   setNoteDate(today)
@@ -93,18 +97,17 @@ async function signIn() {
 }
 
 async function signUp() {
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email,
     password
   })
 
-  if (error) console.log(error)
+  if (error) {
+    console.log(error)
+  } else {
+    setSession(data.session)
+  }
 }
-
-async function signOut() {
-  await supabase.auth.signOut()
-}
-
 async function addNote() {
   if (!noteText) return
 
@@ -211,7 +214,9 @@ const filteredTasks = tasks.filter(task => {
 
   return true
 })
-
+if (loading) {
+  return <div className="p-4">Loading...</div>
+}
 if (!session) {
   return (
     <main className="min-h-screen flex items-center justify-center">
