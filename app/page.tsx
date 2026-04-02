@@ -92,25 +92,7 @@ useEffect(() => {
   })
 
 function setTodayToTomorrow() {
-  console.log("BUTTON CLICKED")
-
-  const now = new Date()
-  console.log("NOW:", now.toString())
-
-  const today = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate()
-  )
-
-  const tomorrow = new Date(today)
-  tomorrow.setDate(today.getDate() + 12)
-
-  console.log("TODAY:", today)
-  console.log("TOMORROW:", tomorrow)
-
-  setFromDate(formatLocalDate(today))
-  setToDate(formatLocalDate(tomorrow)+30)
+  
 }
 
 
