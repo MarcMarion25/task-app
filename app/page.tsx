@@ -104,7 +104,7 @@ function setTodayToTomorrow() {
   )
 
   const tomorrow = new Date(today)
-  tomorrow.setDate(today.getDate() + 1)
+  tomorrow.setDate(today.getDate() + 12)
 
   console.log("TODAY:", today)
   console.log("TOMORROW:", tomorrow)
