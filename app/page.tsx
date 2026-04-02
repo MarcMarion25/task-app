@@ -92,7 +92,25 @@ useEffect(() => {
   })
 
 function setTodayToTomorrow() {
-  
+  //console.log("BUTTON CLICKED")
+
+  const now = new Date()
+  console.log("NOW:", now.toString())
+
+  const today = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  )
+
+  const tomorrow = new Date(today)
+  tomorrow.setDate(today.getDate() + 1)
+
+  console.log("TODAY:", today)
+  console.log("TOMORROW:", tomorrow)
+
+  setFromDate(formatLocalDate(today))
+  setToDate(formatLocalDate(tomorrow))//
 }
 
 
@@ -369,7 +387,7 @@ if (!session) {
             />
 
             <button
-            
+              onClick={setTodayToTomorrow}
               className="text-xs bg-gray-200 px-2 py-1 rounded hover:bg-gray-300"
             >
               Today → Tomorrow
