@@ -110,7 +110,7 @@ function setTodayToTomorrow() {
   console.log("TOMORROW:", tomorrow)
 
   setFromDate(formatLocalDate(today))
-  setToDate(formatLocalDate(tomorrow))
+  setToDate(formatLocalDate(tomorrow)+30)
 }
 
 
