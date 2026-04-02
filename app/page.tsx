@@ -23,22 +23,7 @@ const [email, setEmail] = useState('')
 const [password, setPassword] = useState('')
 const [loading, setLoading] = useState(true)
 
-function getNextDay(dateStr: string) {
-  const d = new Date(dateStr)
-  d.setDate(d.getDate() + 1)
-  return d.toISOString().split('T')[0]
-}
-function goToPreviousDay() {
-  const d = new Date(noteDate)
-  d.setDate(d.getDate() - 1)
-  setNoteDate(d.toISOString().split('T')[0])
-}
 
-function goToNextDay() {
-  const d = new Date(noteDate)
-  d.setDate(d.getDate() + 1)
-  setNoteDate(d.toISOString().split('T')[0])
-}
 function createNoteFromTask(task: any) {
   console.log('task selected', task.id)
 
@@ -58,7 +43,30 @@ async function fetchNotes() {
 
   setNotes(data || [])
 }
+function getNextDay(dateStr: string) {
+  const d = new Date(dateStr)
+  d.setDate(d.getDate() + 1)
+  return formatLocalDate(d)
+}
+function goToPreviousDay() {
+  const d = new Date(noteDate)
+  d.setDate(d.getDate() - 1)
+  setNoteDate(formatLocalDate(d))
+}
 
+function goToNextDay() {
+  const d = new Date(noteDate)
+  d.setDate(d.getDate() + 1)
+  setNoteDate(formatLocalDate(d))
+}
+function setTodayToTomorrow() {
+  const today = new Date()
+  const tomorrow = new Date()
+  tomorrow.setDate(today.getDate() + 1)
+
+  setFromDate(formatLocalDate(today))
+  setToDate(formatLocalDate(tomorrow))
+}
 useEffect(() => {
   fetchNotes()
 }, [noteDate])
@@ -85,8 +93,13 @@ useEffect(() => {
   const today = new Date().toISOString().split('T')[0]
   setNoteDate(today)
 }, [])
+useEffect(() => {
+  setNoteDate(formatLocalDate(new Date()))
+}, [])
 
-
+function formatLocalDate(d: Date) {
+  return d.toLocaleDateString('en-CA') // YYYY-MM-DD
+}
 async function signIn() {
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
