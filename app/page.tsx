@@ -49,7 +49,7 @@ async function fetchNotes() {
 }
 
 function getNextDay(dateStr: string) {
-  const d = parseLocalDate(noteDate)
+  const d = parseLocalDate(dateStr)  // ✅ CORRECT
   d.setDate(d.getDate() + 1)
   return formatLocalDate(d)
 }
@@ -83,10 +83,7 @@ useEffect(() => {
     listener.subscription.unsubscribe()
   }
 }, [])
-useEffect(() => {
-  const today = new Date().toLocaleDateString('en-CA').split('T')[0]
-  setNoteDate(today)
-}, [])
+
 useEffect(() => {
   setNoteDate(formatLocalDate(new Date()))
 }, [])
@@ -118,7 +115,13 @@ function setTodayToTomorrow() {
 
 
 function formatLocalDate(d: Date) {
-  return d.toLocaleDateString('en-CA') // YYYY-MM-DD
+  return (
+    d.getFullYear() +
+    '-' +
+    String(d.getMonth() + 1).padStart(2, '0') +
+    '-' +
+    String(d.getDate()).padStart(2, '0')
+  )
 }
 async function signIn() {
   const { data, error } = await supabase.auth.signInWithPassword({
