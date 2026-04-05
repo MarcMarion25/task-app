@@ -313,7 +313,7 @@ if (!session) {
         </div>
 
         {/* CONTENT */}
-        <div className="p-6">
+        <div className="p-6 text-black">
 
           {/* ==== YOUR EXISTING TRACKER STARTS HERE ==== */}
 
