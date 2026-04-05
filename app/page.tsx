@@ -256,8 +256,8 @@ if (loading) {
 }
 if (!session) {
   return (
-    <main className="min-h-screen flex items-center justify-center">
-      <div className="bg-white p-6 rounded shadow-md flex flex-col gap-2">
+   <main div className="flex flex-col md:flex-row">
+      <div className="bg-white p-6 rounded shadow-md flex flex-col gap-2 w-full md:w-1/2">
 
         <input
           value={email}
@@ -300,9 +300,7 @@ if (!session) {
         <div className="bg-purple-500 text-white  rounded-t-xl px-4 py-2">
           <h1 className="text-lg font-bold text-center">
             Task Tracker<div className="flex justify-between items-center mb-4">
-  <h1 className="text-xl font-bold">
-    Recipe App 🍳
-  </h1>
+  
 
   <button
     onClick={signOut}
