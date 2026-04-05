@@ -278,7 +278,7 @@ if (!session) {
           Login
         </button>
 
-        <button onClick={signUp} className="bg-gray-300 px-2 py-1">
+        <button onClick={signUp} className="bg-gray-300 text-black px-2 py-1">
           Sign Up
         </button>
 
@@ -351,7 +351,7 @@ if (!session) {
             <button
               onClick={() => setFilter('all')}
               className={`px-3 py-1 rounded-lg ${
-                filter === 'all' ? 'bg-blue-500 text-white' : 'bg-gray-200'
+                filter === 'all' ? 'bg-blue-500 text-black' : 'bg-gray-200'
               }`}
             >
               All
@@ -360,7 +360,7 @@ if (!session) {
             <button
               onClick={() => setFilter('active')}
               className={`px-3 py-1 rounded-lg ${
-                filter === 'active' ? 'bg-blue-500 text-white' : 'bg-gray-200'
+                filter === 'active' ? 'bg-blue-500 text-black' : 'bg-gray-200'
               }`}
             >
               Active
@@ -468,7 +468,7 @@ if (!session) {
                   <button
                     onClick={() => toggleTask(task.id, task.completed)}
                     className={`text-sm ${
-                      task.completed ? 'text-green-600' : 'text-gray-400'
+                      task.completed ? 'text-green-600' : 'text-gray-700'
                     }`}
                   >
                     👍
@@ -581,7 +581,7 @@ if (!session) {
 
         <div>{note.note}</div>
 
-        <div className="text-gray-400 flex gap-2">
+        <div className="text-gray-700 flex gap-2">
           {note.spec && <span>#{note.spec}</span>}
           {note.task_id && <span>task:{note.task_id}</span>}
         </div>
