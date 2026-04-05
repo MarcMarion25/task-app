@@ -401,94 +401,97 @@ if (!session) {
             </button>
           </div>
 
-          {/* HEADER ROW */}
-         <div className="overflow-x-auto">
-          <div className="flex items-center px-2 mb-2 text-xs font-semibold text-gray-700 min-w-[700px]">
-            <span className="w-32">Task</span>
-            <span className="w-36">Due Date</span>
-            <span className="w-40">Status</span>
-            <span className="w-36">Completed</span>
-            <span className="w-24 text-right ml-auto">Actions</span>
-          </div>
+         {/* SCROLLABLE TABLE */}
+<div className="overflow-x-auto touch-pan-x">
+  <div className="min-w-[700px]">
+
+    {/* HEADER */}
+    <div className="flex items-center px-2 mb-2 text-xs font-semibold text-gray-700">
+      <span className="w-32">Task</span>
+      <span className="w-36">Due Date</span>
+      <span className="w-40">Status</span>
+      <span className="w-36">Completed</span>
+      <span className="w-24 text-right ml-auto">Actions</span>
+    </div>
+
+    {/* TASK LIST */}
+    <ul className="space-y-1">
+      {filteredTasks.map(task => (
+        <li
+          key={task.id}
+          className="flex items-center bg-gray-50 px-2 py-1 rounded-md hover:bg-gray-100"
+        >
+
+          <div
+            className="w-32 text-xs cursor-pointer hover:underline hover:text-purple-600"
+            onClick={() => {
+              console.log('clicked task', task.id)
+              createNoteFromTask(task)
+            }}
+          >
+            {task.title}
           </div>
 
-          {/* TASK LIST */}
-         <div className="overflow-x-auto">
-          <ul className="space-y-1 min-w-[700px]">
-            {filteredTasks.map(task => (
-              <li
-                key={task.id}
-                className="flex items-center bg-gray-50 px-2 py-1 rounded-md hover:bg-gray-100"
-              >
+          <div className="w-36">
+            <input
+              type="date"
+              value={task.due_date || ''}
+              onChange={(e) =>
+                updateLocalTask(task.id, 'due_date', e.target.value)
+              }
+              className="text-xs bg-transparent"
+            />
+          </div>
 
-                <div
-  className="w-32 text-xs cursor-pointer hover:underline hover:text-purple-600"
-  onClick={() => {
-    console.log('clicked task', task.id)
-    createNoteFromTask(task)
-  }}
->
-  {task.title}
+          <div className="w-40">
+            <input
+              value={task.status || ''}
+              onChange={(e) =>
+                updateLocalTask(task.id, 'status', e.target.value)
+              }
+              className="text-xs bg-transparent"
+            />
+          </div>
+
+          <div className="w-36">
+            <input
+              type="date"
+              value={task.completed_date || ''}
+              onChange={(e) =>
+                updateLocalTask(task.id, 'completed_date', e.target.value)
+              }
+              className="text-xs bg-transparent"
+            />
+          </div>
+
+          <div className="w-24 flex justify-end gap-1">
+            <button onClick={() => updateTask(task)} className="text-sm">
+              💾
+            </button>
+
+            <button
+              onClick={() => toggleTask(task.id, task.completed)}
+              className={`text-sm ${
+                task.completed ? 'text-green-600' : 'text-gray-700'
+              }`}
+            >
+              👍
+            </button>
+
+            <button
+              onClick={() => deleteTask(task.id)}
+              className="text-red-500 text-sm"
+            >
+              ✕
+            </button>
+          </div>
+
+        </li>
+      ))}
+    </ul>
+
+  </div>
 </div>
-
-                <div className="w-36">
-                  <input
-                    type="date"
-                    value={task.due_date || ''}
-                    onChange={(e) =>
-                      updateLocalTask(task.id, 'due_date', e.target.value)
-                    }
-                    className="text-xs bg-transparent"
-                  />
-                </div>
-
-                <div className="w-40">
-                  <input
-                    value={task.status || ''}
-                    onChange={(e) =>
-                      updateLocalTask(task.id, 'status', e.target.value)
-                    }
-                    className="text-xs bg-transparent"
-                  />
-                </div>
-
-                <div className="w-36">
-                  <input
-                    type="date"
-                    value={task.completed_date || ''}
-                    onChange={(e) =>
-                      updateLocalTask(task.id, 'completed_date', e.target.value)
-                    }
-                    className="text-xs bg-transparent"
-                  />
-                </div>
-
-                <div className="w-24 flex justify-end gap-1">
-                  <button onClick={() => updateTask(task)} className="text-sm">
-                    💾
-                  </button>
-
-                  <button
-                    onClick={() => toggleTask(task.id, task.completed)}
-                    className={`text-sm ${
-                      task.completed ? 'text-green-600' : 'text-gray-700'
-                    }`}
-                  >
-                    👍
-                  </button>
-
-                  <button
-                    onClick={() => deleteTask(task.id)}
-                    className="text-red-500 text-sm"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-              </li>
-            ))}
-            </ul>
-        </div>
 
           {/* ==== YOUR EXISTING TRACKER ENDS HERE ==== */}
 
