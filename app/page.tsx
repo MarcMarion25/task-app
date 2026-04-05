@@ -402,16 +402,19 @@ if (!session) {
           </div>
 
           {/* HEADER ROW */}
-          <div className="flex items-center px-2 mb-2 text-xs font-semibold text-black">
+         <div className="overflow-x-auto">
+          <div className="flex items-center px-2 mb-2 text-xs font-semibold text-gray-700 min-w-[700px]">
             <span className="w-32">Task</span>
             <span className="w-36">Due Date</span>
             <span className="w-40">Status</span>
             <span className="w-36">Completed</span>
             <span className="w-24 text-right ml-auto">Actions</span>
           </div>
+          </div>
 
           {/* TASK LIST */}
-          <ul className="space-y-1">
+         <div className="overflow-x-auto">
+          <ul className="space-y-1 min-w-[700px]">
             {filteredTasks.map(task => (
               <li
                 key={task.id}
@@ -484,7 +487,8 @@ if (!session) {
 
               </li>
             ))}
-          </ul>
+            </ul>
+        </div>
 
           {/* ==== YOUR EXISTING TRACKER ENDS HERE ==== */}
 
