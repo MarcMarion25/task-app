@@ -290,10 +290,10 @@ if (!session) {
   
 <main className="min-h-screen bg-gray-100 flex justify-center items-start p-6">
 
-  <div className="flex w-full max-w-6xl gap-6">
+  <div className="flex flex-col md:flex-row w-full max-w-6xl gap-6">
 
     {/* LEFT PANEL — TASK TRACKER */}
-    <div className="w-1/2">
+    <div className="w-full md:w-1/2">
       <div className="bg-white rounded-xl shadow-md w-full h-[800px] flex flex-col">
 
         {/* HEADER */}
@@ -493,7 +493,7 @@ if (!session) {
     </div>
 
     {/* RIGHT PANEL — MONTH VIEW */}
-    <div className="w-1/2">
+    <div className="w-full md:w-1/2">
       <div className="bg-white rounded-xl shadow-md w-full h-[800px] flex flex-col">
             
         <div className="bg-purple-500 text-white px-4 py-2  rounded-t-xl">
