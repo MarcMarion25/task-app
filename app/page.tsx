@@ -256,7 +256,7 @@ if (loading) {
 }
 if (!session) {
   return (
-   <main div className="flex flex-col md:flex-row">
+   <main className="flex flex-col md:flex-row">
       <div className="bg-white p-6 rounded shadow-md flex flex-col gap-2 w-full md:w-1/2">
 
         <input
