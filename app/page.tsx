@@ -293,7 +293,7 @@ if (!session) {
   <div className="flex flex-col md:flex-row w-full max-w-6xl gap-6">
 
     {/* LEFT PANEL — TASK TRACKER */}
-    <div className="w-full md:w-3/4">
+    <div className="w-full md:w-1/2">
       <div className="bg-white rounded-xl shadow-md w-full h-[800px] flex flex-col">
 
         {/* HEADER */}
