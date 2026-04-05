@@ -402,7 +402,7 @@ if (!session) {
           </div>
 
           {/* HEADER ROW */}
-          <div className="flex items-center px-2 mb-2 text-xs font-semibold text-gray-500">
+          <div className="flex items-center px-2 mb-2 text-xs font-semibold text-black">
             <span className="w-32">Task</span>
             <span className="w-36">Due Date</span>
             <span className="w-40">Status</span>
