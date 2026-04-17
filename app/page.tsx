@@ -679,15 +679,6 @@ cards: {
 }
 
 function HabitsCard() {
-  
-  
-const deleteHabit = async (id: string) => {
-  await supabase.from('habits').delete().eq('id', id)
-
-  fetchHabits()
-}
-
-
   const today = new Date()
   const todayStr = today.toISOString().split('T')[0]
   const weekday = today.getDay()
@@ -700,6 +691,9 @@ const deleteHabit = async (id: string) => {
   const [intervalDays, setIntervalDays] = useState(3)
   const [habitWeekday, setHabitWeekday] = useState(6)
 
+  const [showCelebration, setShowCelebration] = useState(true)
+
+  // FETCH
   const fetchHabits = async () => {
     const { data } = await supabase.from('habits').select('*')
     if (data) setHabits(data)
@@ -716,6 +710,7 @@ const deleteHabit = async (id: string) => {
     fetchHabits()
   }, [])
 
+  // LOGIC
   const isDueToday = (habit: any) => {
     if (habit.frequency_type === 'daily') return true
 
@@ -734,17 +729,26 @@ const deleteHabit = async (id: string) => {
     return false
   }
 
- 
+  const isCompleted = (habitId: string) => {
+    return logs.some((l) => l.habit_id === habitId)
+  }
 
+  const dueHabits = habits.filter(isDueToday)
 
- const isCompleted = (habitId: string) => {
-  return logs.some((l) => l.habit_id === habitId)
-}
-const dueHabits = habits.filter(isDueToday)
+  const allCompleted =
+    dueHabits.length > 0 &&
+    dueHabits.every((h) => isCompleted(h.id))
 
-const allCompleted =
-  dueHabits.length > 0 &&
-  dueHabits.every((h) => isCompleted(h.id))  
+  const shouldCelebrate = allCompleted && showCelebration
+
+  // RESET celebration when habits change
+  useEffect(() => {
+    if (!allCompleted) {
+      setShowCelebration(true)
+    }
+  }, [allCompleted])
+
+  // ACTIONS
   const toggleHabit = async (habitId: string) => {
     const exists = logs.find((l) => l.habit_id === habitId)
 
@@ -759,6 +763,36 @@ const allCompleted =
     fetchHabits()
   }
 
+
+  const getFrequencyLabel = (habit: any) => {
+  if (habit.frequency_type === 'daily') return 'Daily'
+
+  if (habit.frequency_type === 'interval') {
+    return `Every ${habit.interval_days} days`
+  }
+
+  if (habit.frequency_type === 'weekly') {
+    return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][habit.weekday]
+  }
+
+  return ''
+}
+
+  const deleteHabit = async (id: string) => {
+  // delete logs first
+  await supabase
+    .from('habit_logs')
+    .delete()
+    .eq('habit_id', id)
+
+  // then delete habit
+  await supabase
+    .from('habits')
+    .delete()
+    .eq('id', id)
+
+  fetchHabits()
+}
   const addHabit = async () => {
     if (!newHabit) return
 
@@ -779,104 +813,124 @@ const allCompleted =
   }
 
   return (
-  <div style={card}>
-    <div style={headerStyle('#22c55e')}>Habits</div>
+    <div style={card}>
+      <div style={headerStyle('#22c55e')}>Habits</div>
 
-    <div style={{ padding: 12 }}>
-    {allCompleted ? (
-  <Celebration />
-) : (
-  <>
-          {/* ADD */}
-          <div style={{ marginTop: 10 }}>
-            <input
-              style={input}
-              placeholder="New habit"
-              value={newHabit}
-              onChange={(e) => setNewHabit(e.target.value)}
+      <div style={{ padding: 12 }}>
+        
+        {/* 🎆 CELEBRATION */}
+        {shouldCelebrate && (
+          <div style={{ textAlign: 'center', marginBottom: 20 }}>
+            <img
+              src="/fireworks.gif"
+              alt="celebration"
+              style={{ width: 200 }}
             />
 
-            <div style={{ marginTop: 8 }}>
-              <select
-                value={frequencyType}
-                onChange={(e) => setFrequencyType(e.target.value)}
-                style={smallInput}
-              >
-                <option value="daily">Daily</option>
-                <option value="interval">Every X Days</option>
-                <option value="weekly">Specific Day</option>
-              </select>
+            <div style={{ marginTop: 10, fontWeight: 600 }}>
+              All habits complete! 🔥
             </div>
 
-            {frequencyType === 'interval' && (
-              <div style={{ marginTop: 8 }}>
-                <input
-                  type="number"
-                  min="1"
-                  value={intervalDays}
-                  onChange={(e) =>
-                    setIntervalDays(Number(e.target.value))
-                  }
-                  style={smallInput}
-                />
-                <span style={{ marginLeft: 6 }}>days</span>
-              </div>
-            )}
-
-            {frequencyType === 'weekly' && (
-              <div style={{ marginTop: 8 }}>
-                <select
-                  value={habitWeekday}
-                  onChange={(e) =>
-                    setHabitWeekday(Number(e.target.value))
-                  }
-                  style={smallInput}
-                >
-                  <option value={0}>Sunday</option>
-                  <option value={1}>Monday</option>
-                  <option value={2}>Tuesday</option>
-                  <option value={3}>Wednesday</option>
-                  <option value={4}>Thursday</option>
-                  <option value={5}>Friday</option>
-                  <option value={6}>Saturday</option>
-                </select>
-              </div>
-            )}
-
-            <button style={addBtn} onClick={addHabit}>
-              Add Habit
+            <button
+              style={filterBtn}
+              onClick={() => setShowCelebration(false)}
+            >
+              Done celebrating 🙂
             </button>
           </div>
+        )}
 
-          {/* LIST */}
-          <div style={{ marginTop: 10 }}>
-            {dueHabits.map((habit) => (
-              <div key={habit.id} style={taskRow}>
-                <input
-                  type="checkbox"
-                  checked={isCompleted(habit.id)}
-                  onChange={() => toggleHabit(habit.id)}
-                />
+        {/* ➕ ADD HABIT */}
+        <div style={{ marginTop: 10 }}>
+          <input
+            style={input}
+            placeholder="New habit"
+            value={newHabit}
+            onChange={(e) => setNewHabit(e.target.value)}
+          />
 
-                <span style={{ flex: 1 }}>{habit.name}</span>
-
-                <button
-                  style={deleteBtn}
-                  onClick={() => deleteHabit(habit.id)}
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
+          <div style={{ marginTop: 8 }}>
+            <select
+              value={frequencyType}
+              onChange={(e) => setFrequencyType(e.target.value)}
+              style={smallInput}
+            >
+              <option value="daily">Daily</option>
+              <option value="interval">Every X Days</option>
+              <option value="weekly">Specific Day</option>
+            </select>
           </div>
-        </>
-      )}
+
+          {frequencyType === 'interval' && (
+            <div style={{ marginTop: 8 }}>
+              <input
+                type="number"
+                min="1"
+                value={intervalDays}
+                onChange={(e) =>
+                  setIntervalDays(Number(e.target.value))
+                }
+                style={smallInput}
+              />
+              <span style={{ marginLeft: 6 }}>days</span>
+            </div>
+          )}
+
+          {frequencyType === 'weekly' && (
+            <div style={{ marginTop: 8 }}>
+              <select
+                value={habitWeekday}
+                onChange={(e) =>
+                  setHabitWeekday(Number(e.target.value))
+                }
+                style={smallInput}
+              >
+                <option value={0}>Sunday</option>
+                <option value={1}>Monday</option>
+                <option value={2}>Tuesday</option>
+                <option value={3}>Wednesday</option>
+                <option value={4}>Thursday</option>
+                <option value={5}>Friday</option>
+                <option value={6}>Saturday</option>
+              </select>
+            </div>
+          )}
+
+          <button style={addBtn} onClick={addHabit}>
+            Add Habit
+          </button>
+        </div>
+
+        {/* 📋 HABIT LIST */}
+        <div style={{ marginTop: 10 }}>
+          {dueHabits.map((habit) => (
+            <div key={habit.id} style={taskRow}>
+              <input
+                type="checkbox"
+                checked={isCompleted(habit.id)}
+                onChange={() => toggleHabit(habit.id)}
+              />
+
+                        <div style={{ flex: 1 }}>
+              <div>{habit.name}</div>
+              <div style={{ fontSize: 12, color: '#6b7280' }}>
+                {getFrequencyLabel(habit)}
+              </div>
+            </div>
+              <button
+                style={deleteBtn}
+                onClick={() => deleteHabit(habit.id)}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+
+      </div>
     </div>
-  </div>
-)
-
+  )
 }
-
 function Celebration() {
   return (
     <div
