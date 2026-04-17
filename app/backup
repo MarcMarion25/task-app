@@ -1,0 +1,909 @@
+'use client'
+import { useEffect, useState } from 'react'
+import { supabase } from './lib/supabase'
+import { useRef } from 'react'
+
+
+
+
+import { memo, ReactNode } from 'react'
+
+export default function Home() {
+  // ===== DAILY DATA =====
+type CardProps = {
+  title: string
+  color: string
+  children: ReactNode
+  span?: string
+}
+
+const Card = memo(function Card({ title, color, children, span = "" }: CardProps) {
+  return (
+    <div className={`bg-white rounded-xl shadow-md flex flex-col ${span}`}>
+      <div className={`px-4 py-2 text-white rounded-t-xl ${color}`}>
+        <h2 className="font-semibold">{title}</h2>
+      </div>
+      <div className="p-4 text-sm text-black">{children}</div>
+    </div>
+  )
+})
+
+
+
+
+
+  const [isLoaded, setIsLoaded] = useState(false)
+  
+const [dailyData, setDailyData] = useState({
+  goal: '',
+  intention: '',
+  narrative: ''
+})
+
+
+const hasLoaded = useRef(false)
+
+  const [rating, setRating] = useState<number | null>(null)
+  // ===== TASKS =====
+  const [tasks, setTasks] = useState<any[]>([])
+  const [newTask, setNewTask] = useState('')
+  const [filter, setFilter] = useState('all')
+  const [dueDate, setDueDate] = useState('')
+  const [status, setStatus] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+
+  // ===== NOTES =====
+  const [notes, setNotes] = useState<any[]>([])
+  const [noteText, setNoteText] = useState('')
+  const [spec, setSpec] = useState('')
+  const [taskId, setTaskId] = useState<number | null>(null)
+
+  // ===== AUTH =====
+  const [session, setSession] = useState<any>(null)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  // ===== OTHER =====
+  const [lastFiveDays, setLastFiveDays] = useState<any[]>([])
+  const [quote, setQuote] = useState('')
+  const [author, setAuthor] = useState('')
+  const [isMutating, setIsMutating] = useState(false)
+  
+  // ===== DATE =====
+  const [noteDate, setNoteDate] = useState(() => {
+    const d = new Date()
+    return (
+      d.getFullYear() +
+      '-' +
+      String(d.getMonth() + 1).padStart(2, '0') +
+      '-' +
+      String(d.getDate()).padStart(2, '0')
+    )
+  })
+
+ 
+ const todayRef = useRef(new Date().toDateString())
+
+  
+
+useEffect(() => {
+  fetchTasks()
+  fetchNotes()
+  fetchLast5Days()
+}, [noteDate])
+
+
+useEffect(() => {
+  async function loadData() {
+    if (hasLoaded.current) return
+
+    const { data: userData } = await supabase.auth.getUser()
+
+    const { data } = await supabase
+      .from('daily_logs')
+      .select('*')
+      .eq('date', noteDate)
+      .eq('user_id', userData.user.id)
+      .maybeSingle()
+
+    setDailyData({
+      goal: data?.goal || '',
+      intention: data?.intention || '',
+      narrative: data?.narrative || ''
+    })
+
+    hasLoaded.current = true
+  }
+
+  loadData()
+}, [noteDate])
+
+useEffect(() => {
+  hasLoaded.current = false
+}, [noteDate])
+
+async function fetchLast5Days() {
+  const { data: userData } = await supabase.auth.getUser()
+
+  const { data } = await supabase
+    .from('daily_logs')
+    .select('*')
+    .eq('user_id', userData.user.id)
+    .order('date', { ascending: false })
+    .limit(5)
+
+  setLastFiveDays(data || [])
+}
+
+
+
+
+useEffect(() => {
+  const today = new Date().toDateString()
+  const saved = localStorage.getItem('rating-' + todayRef.current)
+  if (saved) setRating(Number(saved))
+}, [])
+
+useEffect(() => {
+  if (!rating) return
+
+  const today = new Date().toDateString()
+  localStorage.setItem('rating-' + todayRef.current, String(rating))
+}, [rating])
+
+async function saveNarrative() {
+  const { data: userData } = await supabase.auth.getUser()
+
+await supabase
+  .from('daily_logs')
+  .upsert(
+    {
+      date: noteDate,
+      goal: dailyData.goal,
+      intention: dailyData.intention,
+      narrative: dailyData.narrative,
+      user_id: userData.user.id
+    },
+    {
+      onConflict: 'user_id,date'   // 🔥 THIS FIXES IT
+    }
+  )}
+
+async function updateDueDate(id: number, newDate: string) {
+  await runMutation(async () => {
+    await supabase
+      .from('tasks')
+      .update({ due_date: newDate || null })
+      .eq('id', id)
+  })
+}
+let mutationLock = false
+
+async function runMutation(fn: () => Promise<void>) {
+  if (mutationLock) return
+
+  mutationLock = true
+  setIsMutating(true)
+
+  try {
+    await fn()
+  } catch (err) {
+    console.error(err)
+  } finally {
+    mutationLock = false
+    setIsMutating(false)
+    fetchTasks()
+  }
+}
+async function updateTask(task) {
+  await runMutation(async () => {
+    await supabase
+      .from('tasks')
+      .update({
+        due_date: task.due_date || null,
+        status: task.status || null,
+        completed_date: task.completed_date || null
+      })
+      .eq('id', task.id)
+  })
+}
+async function toggleTask(id: number, completed: boolean) {
+  await runMutation(async () => {
+    await supabase
+      .from('tasks')
+      .update({ completed: !completed })
+      .eq('id', id)
+  })
+}
+
+async function deleteTask(id: number) {
+  await runMutation(async () => {
+    await supabase.from('tasks').delete().eq('id', id)
+  })
+}
+async function addTask() {
+  if (!newTask) return
+
+  await runMutation(async () => {
+    await supabase.from('tasks').insert([
+      {
+        title: newTask,
+        completed: false,
+        due_date: dueDate || null,
+        status: status || null
+      }
+    ])
+  })
+
+  setNewTask('')
+  setDueDate('')
+  setStatus('')
+}
+
+
+useEffect(() => {
+  async function loadQuote() {
+    try {
+      const today = new Date().toDateString()
+
+      // check cache
+      const savedQuote = localStorage.getItem('quote')
+      const savedAuthor = localStorage.getItem('quoteAuthor')
+      const savedDate = localStorage.getItem('quoteDate')
+
+      if (savedDate === today && savedQuote) {
+        setQuote(savedQuote)
+        setAuthor(savedAuthor || '')
+        return
+      }
+
+      // fetch new quote
+      const res = await fetch('https://api.quotable.io/random')
+      const data = await res.json()
+
+      setQuote(data.content)
+      setAuthor(data.author)
+
+      // save to localStorage
+      localStorage.setItem('quote', data.content)
+      localStorage.setItem('quoteAuthor', data.author)
+      localStorage.setItem('quoteDate', today)
+
+    } catch (err) {
+      console.log(err)
+      setQuote("Failed to load quote")
+    }
+  }
+
+  loadQuote()
+}, [])
+
+
+async function save() {
+  const { data: userData } = await supabase.auth.getUser()
+
+  await supabase
+    .from('daily_logs')
+    .upsert(
+      {
+        user_id: userData.user.id,
+        date: noteDate,
+        ...dailyData
+      },
+      { onConflict: 'user_id,date' }
+    )
+}
+async function fetchQuote() {
+  try {
+    const res = await fetch('https://api.quotable.io/random')
+    const data = await res.json()
+
+    setQuote(data.content)
+    setAuthor(data.author)
+  } catch (err) {
+    console.log(err)
+  }
+}
+
+function parseLocalDate(dateStr: string) {
+  const [year, month, day] = dateStr.split('-')
+  return new Date(Number(year), Number(month) - 1, Number(day))
+}
+
+function createNoteFromTask(task: any) {
+ 
+  setTaskId(task.id) 
+  setNoteText('')   // or task.title if you want prefill
+  setSpec('')
+}
+async function fetchNotes() {
+  if (!noteDate) return
+
+  const start = new Date(noteDate + 'T00:00:00')
+  const end = new Date(noteDate + 'T23:59:59')
+
+  const { data } = await supabase
+    .from('dailynotes')
+    .select('*')
+    .gte('created_at', start.toISOString())
+    .lte('created_at', end.toISOString())
+    .order('created_at', { ascending: false })
+
+  setNotes(data || [])
+}
+
+function getNextDay(dateStr: string) {
+  const d = parseLocalDate(dateStr)  // ✅ CORRECT
+  d.setDate(d.getDate() + 1)
+  return formatLocalDate(d)
+}
+function goToPreviousDay() {
+  const d = parseLocalDate(noteDate)
+  d.setDate(d.getDate() - 1)
+  setNoteDate(formatLocalDate(d))
+}
+
+function goToNextDay() {
+ const d = parseLocalDate(noteDate)
+  d.setDate(d.getDate() + 1)
+  setNoteDate(formatLocalDate(d))
+}
+
+useEffect(() => {
+  const getSession = async () => {
+    const { data } = await supabase.auth.getSession()
+    setSession(data.session)
+    setLoading(false)
+  }
+
+  getSession()
+
+
+
+}, [])
+
+useEffect(() => {
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    (_event, session) => setSession(session)
+  )
+
+  return () => subscription.unsubscribe()
+}, [])
+
+function setTodayToTomorrow() {
+  //console.log("BUTTON CLICKED")
+
+  const now = new Date()
+ 
+  const today = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  )
+
+  const tomorrow = new Date(today)
+  tomorrow.setDate(today.getDate() + 1)
+
+
+  setFromDate(formatLocalDate(today))
+  setToDate(formatLocalDate(tomorrow))//
+}
+
+
+function formatLocalDate(d: Date) {
+  return (
+    d.getFullYear() +
+    '-' +
+    String(d.getMonth() + 1).padStart(2, '0') +
+    '-' +
+    String(d.getDate()).padStart(2, '0')
+  )
+}
+async function signIn() {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password
+  })
+
+  if (error) {
+    console.log(error)
+  } else {
+    setSession(data.session)
+  }
+}
+async function signUp() {
+  const { error } = await supabase.auth.signUp({
+    email,
+    password
+  })
+
+  if (error) {
+    console.log(error)
+  } else {
+    // 👇 immediately try login after signup
+    await signIn()
+  }
+}async function addNote() {
+  if (!noteText) return
+
+  await supabase.from('dailynotes').insert([
+    {
+      note: noteText,
+      spec: spec || null,
+    task_id: taskId
+    }
+  ])
+
+  setNoteText('')
+  setSpec('')
+  setTaskId(null)
+  fetchNotes()
+}
+  async function fetchTasks() {
+    const { data } = await supabase.from('tasks').select('*')
+    setTasks(data || [])
+  }
+
+
+ 
+ async function signOut() {
+  await supabase.auth.signOut()
+  setSession(null)
+}
+
+
+
+
+ 
+
+function updateLocalTask(id, field, value) {
+  setTasks(prev =>
+    prev.map(t =>
+      t.id === id ? { ...t, [field]: value } : t
+    )
+  )
+}
+ 
+
+
+
+  
+
+  useEffect(() => {
+    fetchTasks()
+  }, [])
+
+const filteredTasks = tasks.filter(task => {
+  if (filter === 'active') return !task.completed
+  if (filter === 'completed') return task.completed
+
+  // DATE RANGE FILTER
+  if (fromDate && (!task.due_date || task.due_date < fromDate)) return false
+  if (toDate && (!task.due_date || task.due_date > toDate)) return false
+
+  return true
+})
+if (loading) return <div className="p-4">Loading...</div>
+
+  if (!session) {
+    if (!isLoaded) return null
+    return (
+      
+      <main className="p-6">
+       <div className="bg-white rounded-xl shadow-md w-full h-[800px] flex flex-col overflow-hidden">
+          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email" className="border px-2 py-1" />
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="password" className="border px-2 py-1" />
+          <button onClick={signIn} className="bg-blue-500 text-white px-2 py-1">Login</button>
+          <button onClick={signUp} className="bg-gray-300 px-2 py-1">Sign Up</button>
+        </div>
+      </main>
+    )
+  }
+
+  return (
+    
+    <main className="min-h-screen bg-gray-100 p-4 md:p-6">
+      <input
+  value={dailyData.goal}
+  onChange={(e) =>
+    setDailyData(prev => ({ ...prev, goal: e.target.value }))
+  }
+  className="border p-2 mb-4"
+/>
+      <div className="w-full max-w-6xl mb-4">
+
+  <div className="flex items-center justify-center gap-2 text-sm">
+
+    <button
+      onClick={goToPreviousDay}
+      className="px-2 py-1 bg-gray-200 rounded"
+    >
+      ←
+    </button>
+
+    <input
+      type="date"
+      value={noteDate}
+      onChange={(e) => setNoteDate(e.target.value)}
+      className="border rounded px-2 py-1"
+    />
+
+    <button
+      onClick={goToNextDay}
+      className="px-2 py-1 bg-gray-200 rounded"
+    >
+      →
+    </button>
+
+  </div>
+
+</div>
+      
+      {/* HEADER */}
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-xl font-bold">Marc's Dashboard</h1>
+        <button onClick={signOut} className="text-sm bg-red-100 text-red-600 px-2 py-1 rounded">
+          Logout
+        </button>
+      </div>
+
+      {/* GRID */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+
+        {/* TASKS */}
+       <Card title="Open Tasks" color="bg-green-600">
+  {/* ADD TASK */}
+  <div className="flex gap-2 mb-4">
+    <input
+      value={newTask}
+      onChange={(e) => setNewTask(e.target.value)}
+      placeholder="Add task..."
+      className="flex-1 border px-2 py-1 text-xs rounded"
+    />
+
+    <input
+      type="date"
+      value={dueDate}
+      onChange={(e) => setDueDate(e.target.value)}
+      className="border px-2 py-1 text-xs rounded"
+    />
+
+    <input
+      value={status}
+      onChange={(e) => setStatus(e.target.value)}
+      placeholder="status"
+      className="border px-2 py-1 text-xs rounded w-24"
+    />
+
+    <button
+      disabled={isMutating}
+      onClick={addTask}
+      className="bg-blue-500 text-white px-3 rounded"
+    >
+      +
+    </button>
+  </div>
+
+  {/* FILTER BUTTONS */}
+  <div className="flex gap-2 mb-3 text-xs">
+    <button onClick={() => setFilter('all')} className="px-2 py-1 bg-gray-200 rounded">All</button>
+    <button onClick={() => setFilter('active')} className="px-2 py-1 bg-gray-200 rounded">Active</button>
+    <button onClick={() => setFilter('completed')} className="px-2 py-1 bg-gray-200 rounded">Completed</button>
+  </div>
+
+  {/* DATE FILTER */}
+  <div className="flex items-center gap-2 mb-3 text-xs">
+    <span>From:</span>
+    <input
+      type="date"
+      value={fromDate}
+      onChange={(e) => setFromDate(e.target.value)}
+      className="border px-1 py-0.5 rounded"
+    />
+
+    <span>To:</span>
+    <input
+      type="date"
+      value={toDate}
+      onChange={(e) => setToDate(e.target.value)}
+      className="border px-1 py-0.5 rounded"
+    />
+
+    <button
+      onClick={setTodayToTomorrow}
+      className="bg-gray-200 px-2 py-1 rounded"
+    >
+      Today → Tomorrow
+    </button>
+  </div>
+
+  {/* HEADER */}
+  <div className="flex text-xs font-semibold mb-2 px-1">
+    <span className="flex-1">Task</span>
+    <span className="flex-1">Due</span>
+    <span className="flex-1">Status</span>
+    <span className="flex-1">Done</span>
+    <span className="w-16 text-right">Actions</span>
+  </div>
+
+  {/* TASK LIST */}
+  <div className="space-y-1 max-h-[400px] overflow-y-auto">
+    {filteredTasks.map(task => (
+      <div
+        key={task.id}
+        className="flex items-center bg-gray-50 px-2 py-1 rounded text-xs"
+      >
+
+        {/* TITLE */}
+        <div
+          className="flex-1 truncate cursor-pointer hover:underline"
+          onClick={() => createNoteFromTask(task)}
+        >
+          {task.title}
+        </div>
+
+        {/* DUE DATE */}
+        <div className="flex-1">
+          <input
+            type="date"
+            value={task.due_date || ''}
+            onChange={(e) =>
+              updateLocalTask(task.id, 'due_date', e.target.value)
+            }
+            className="bg-transparent"
+          />
+        </div>
+
+        {/* STATUS */}
+        <div className="flex-1">
+          <input
+            value={task.status || ''}
+            onChange={(e) =>
+              updateLocalTask(task.id, 'status', e.target.value)
+            }
+            className="bg-transparent"
+          />
+        </div>
+
+        {/* COMPLETED DATE */}
+        <div className="flex-1">
+          <input
+            type="date"
+            value={task.completed_date || ''}
+            onChange={(e) =>
+              updateLocalTask(task.id, 'completed_date', e.target.value)
+            }
+            className="bg-transparent"
+          />
+        </div>
+
+        {/* ACTIONS */}
+        <div className="w-16 flex justify-end gap-1">
+          <button disabled={isMutating} onClick={() => updateTask(task)}>💾</button>
+
+          <button
+            disabled={isMutating}
+            onClick={() => toggleTask(task.id, task.completed)}
+            className={task.completed ? 'text-green-600' : ''}
+          >
+            👍
+          </button>
+
+          <button disabled={isMutating} onClick={() => deleteTask(task.id)} className="text-red-500">
+            ✕
+          </button>
+        </div>
+
+      </div>
+    ))}
+  </div>
+
+</Card>
+<Card title="Notes" color="bg-purple-600">
+
+  {/* DATE NAV */}
+  <div className="flex items-center justify-between mb-3 text-xs">
+    <button onClick={goToPreviousDay}>←</button>
+
+    <span>
+   {noteDate ? (
+  parseLocalDate(noteDate).toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric'
+  })
+) : 'Select a date'}
+    </span>
+
+    <button onClick={goToNextDay}>→</button>
+  </div>
+
+  {/* DATE PICKER */}
+  <input
+    type="date"
+    value={noteDate}
+    onChange={(e) => setNoteDate(e.target.value)}
+    className="border rounded px-2 py-1 text-xs mb-3 w-full"
+  />
+
+  {/* ADD NOTE */}
+  <div className="flex gap-2 mb-3">
+    {taskId && (
+  <div className="text-xs mb-2 bg-purple-100 px-2 py-1 rounded">
+    Linked to task: {taskId}
+  </div>
+)}
+    <input
+      value={noteText}
+      onChange={(e) => setNoteText(e.target.value)}
+      placeholder="Write note..."
+      className="flex-1 border px-2 py-1 text-xs rounded"
+    />
+
+    <input
+      value={spec}
+      onChange={(e) => setSpec(e.target.value)}
+      placeholder="spec"
+      className="w-16 border px-2 py-1 text-xs rounded"
+    />
+
+    <button
+      onClick={addNote}
+      className="bg-purple-500 text-white px-2 rounded"
+    >
+      +
+    </button>
+  </div>
+
+  {/* NOTES LIST */}
+  <div className="space-y-1 text-xs max-h-[300px] overflow-y-auto">
+    {notes.map(note => (
+      <div key={note.id} className="bg-gray-50 px-2 py-1 rounded">
+
+        <div>{note.note}</div>
+
+        <div className="text-gray-600 flex gap-2">
+          {note.spec && <span>#{note.spec}</span>}
+          {note.task_id && <span>task:{note.task_id}</span>}
+        </div>
+      </div>
+    ))}
+  </div>
+
+</Card>
+
+        {/* GOAL */}
+
+
+<Card title="Goal" color="bg-green-500">
+  <input
+    value={dailyData.goal}
+    onChange={(e) =>
+      setDailyData(prev => ({ ...prev, goal: e.target.value }))
+    }
+    className="border p-2 w-full"
+  />
+</Card>
+
+   
+
+        {/* INTENTION */}
+        <Card title="Intention" color="bg-orange-500">
+          {/* INTENTION INPUT */}
+<div className="p-3">
+<input
+  value={dailyData.intention}
+  onChange={(e) =>
+    setDailyData(prev => ({ ...prev, intention: e.target.value }))
+  }
+
+  placeholder="What is your intention today?"
+  className="w-full border rounded px-2 py-2 text-sm"
+/>
+  <button
+    onClick={saveNarrative}
+    className="mt-2 text-xs bg-green-500 text-white px-2 py-1 rounded"
+  >
+    Save
+  </button>
+</div>
+
+
+<div className="mt-4 space-y-2 text-xs">
+  {lastFiveDays.map((day) => (
+    <div key={day.date} className="bg-gray-50 p-2 rounded">
+
+      <div className="font-semibold text-gray-600">
+        {day.date}
+      </div>
+
+      <div>
+        🎯 {day.intention ? day.intention : 'No intention set'}
+      </div>
+
+    </div>
+  ))}
+</div>
+
+
+
+
+        </Card>
+
+        {/* QUOTE */}
+      <Card title="Quote of the Day" color="bg-teal-500">
+  <p className="italic text-sm mb-2">
+    {quote || "Loading quote..."}
+  </p>
+  <p className="text-xs text-gray-600">
+    {author && `— ${author}`}
+  </p>
+
+  <button
+    onClick={fetchQuote}
+    className="mt-3 text-xs bg-gray-200 px-2 py-1 rounded"
+  >
+    New Quote
+  </button>
+</Card>
+<Card title="Rate the Day" color="bg-blue-500">
+
+  <div className="flex justify-center gap-2 mb-3">
+    {/* DAY NARRATIVE */}
+<textarea
+  value={dailyData.narrative}
+  onChange={(e) =>
+    setDailyData(prev => ({ ...prev, narrative: e.target.value }))
+  }
+
+  placeholder="How was your day?"
+/>
+<button
+  onClick={saveNarrative}
+  className="text-xs bg-green-500 text-white px-2 py-1 rounded mb-3"
+>
+  Save
+</button>
+   {['😞','😐','🙂','😄','🔥'].map((emoji, i) => {
+  const value = i + 1
+  return (
+    <button
+      key={value}
+      onClick={() => setRating(value)}
+      className={`text-xl ${
+        rating === value ? 'scale-125' : ''
+      }`}
+    >
+      {emoji}
+    </button>
+  )
+})}
+  </div>
+
+  {rating && (
+    <div className="text-center text-xs text-gray-600">
+      You rated today: {rating}/5
+    </div>
+  )}
+{/* LAST 5 DAYS */}
+<div className="mt-4 space-y-2 text-xs">
+  {lastFiveDays.map((day) => (
+    <div key={day.date} className="bg-gray-50 p-2 rounded">
+
+      <div className="font-semibold text-grmay-600">
+        {day.date}
+      </div>
+
+      <div>🎯 {day.rating || '-'}</div>
+
+    </div>
+  ))}
+</div>
+</Card>
+
+      </div>
+    </main>
+  )
+}

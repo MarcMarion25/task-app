@@ -1,609 +1,984 @@
 'use client'
+
 import { useEffect, useState } from 'react'
-import { supabase } from './lib/supabase'
+import { supabase } from '@/app/lib/supabase'
 
+const headerStyle = (color: string) => ({
+  background: color,
+  color: 'white',
+  padding: '10px 12px',
+  borderTopLeftRadius: 12,
+  borderTopRightRadius: 12,
+  fontWeight: 600,
+})
 
+// TYPES
+type Task = {
+  id: string
+  title: string
+  due_date: string | null
+  status: string | null
+  completed: boolean
+  comp_date: string | null
+}
 
+// MAIN PAGE
 export default function Home() {
-  const [tasks, setTasks] = useState<any[]>([])
-  const [newTask, setNewTask] = useState('')
-  const [filter, setFilter] = useState('all')
+  return (
+    <div style={styles.page}>
+      <div style={styles.container}>
+        <h1 style={styles.title}>Task App</h1>
+
+
+
+
+
+       <div style={styles.cards}>
+  <div style={{ ...twoThirds, marginBottom: 20 }}>
+    <TasksCard />
+  </div>
+<div style={{ ...twoThirds, marginBottom: 20 }}>
+  <NotesCard />
+  </div>
+  <div style={{ ...twoThirds, marginBottom: 20 }}>
+  <IntentionsCard /></div>
+  <div style={{ ...twoThirds, marginBottom: 20 }}>
+  <DayRatingCard />
+</div>
+<div style={{ ...twoThirds, marginBottom: 20 }}>
+   
+    <CompletedTasksCard />
+  </div>
+
+<div style={{ ...twoThirds, marginBottom: 20 }}>
+<HabitsCard />
+</div>  
+</div>
+
+      </div>
+    </div>
+  )
+}
+// TASKS CARD
+function TasksCard() {
+  const [title, setTitle] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [status, setStatus] = useState('')
-  const [fromDate, setFromDate] = useState('')
-  const [toDate, setToDate] = useState('')
-  'notes'
-  const [notes, setNotes] = useState<any[]>([])
-const [noteText, setNoteText] = useState('')
-const [noteDate, setNoteDate] = useState('')
-const [spec, setSpec] = useState('')
-const [taskId, setTaskId] = useState('')
-const [session, setSession] = useState<any>(null)
-const [email, setEmail] = useState('')
-const [password, setPassword] = useState('')
-const [loading, setLoading] = useState(true)
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
 
-function parseLocalDate(dateStr: string) {
-  const [year, month, day] = dateStr.split('-')
-  return new Date(Number(year), Number(month) - 1, Number(day))
-}
+  // EDIT STATE
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editStatus, setEditStatus] = useState('')
+  const [editDueDate, setEditDueDate] = useState('')
 
-function createNoteFromTask(task: any) {
-  console.log('task selected', task.id)
+  // FETCH TASKS
+  const fetchTasks = async () => {
+    let query = supabase
+  .from('tasks')
+  .select('*')
+  .eq('completed', false)   // ✅ ONLY open tasks
+  .order('due_date')
 
-  setTaskId(task.id)
-  setNoteText('')   // or task.title if you want prefill
-  setSpec('')
-}
-async function fetchNotes() {
-  if (!noteDate) return
+    if (startDate) query = query.gte('due_date', startDate)
+    if (endDate) query = query.lte('due_date', endDate)
 
-  const { data } = await supabase
-    .from('dailynotes')
-    .select('*')
-    .gte('created_at', noteDate)
-    .lt('created_at', getNextDay(noteDate))
-    .order('created_at', { ascending: false })
-
-  setNotes(data || [])
-}
-
-function getNextDay(dateStr: string) {
-  const d = parseLocalDate(dateStr)  // ✅ CORRECT
-  d.setDate(d.getDate() + 1)
-  return formatLocalDate(d)
-}
-function goToPreviousDay() {
-  const d = parseLocalDate(noteDate)
-  d.setDate(d.getDate() - 1)
-  setNoteDate(formatLocalDate(d))
-}
-
-function goToNextDay() {
- const d = parseLocalDate(noteDate)
-  d.setDate(d.getDate() + 1)
-  setNoteDate(formatLocalDate(d))
-}
-
-useEffect(() => {
-  fetchNotes()
-}, [noteDate])
-useEffect(() => {
-  const getSession = async () => {
-    const { data } = await supabase.auth.getSession()
-    setSession(data.session)
-    setLoading(false)
-  }
-
-  getSession()
-
-
-
-  return () => {
-    listener.subscription.unsubscribe()
-  }
-}, [])
-
-useEffect(() => {
-  setNoteDate(formatLocalDate(new Date()))
-}, [])
-  const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-    setSession(session)
-  })
-
-function setTodayToTomorrow() {
-  //console.log("BUTTON CLICKED")
-
-  const now = new Date()
-  console.log("NOW:", now.toString())
-
-  const today = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate()
-  )
-
-  const tomorrow = new Date(today)
-  tomorrow.setDate(today.getDate() + 1)
-
-  console.log("TODAY:", today)
-  console.log("TOMORROW:", tomorrow)
-
-  setFromDate(formatLocalDate(today))
-  setToDate(formatLocalDate(tomorrow))//
-}
-
-
-function formatLocalDate(d: Date) {
-  return (
-    d.getFullYear() +
-    '-' +
-    String(d.getMonth() + 1).padStart(2, '0') +
-    '-' +
-    String(d.getDate()).padStart(2, '0')
-  )
-}
-async function signIn() {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password
-  })
-
-  if (error) {
-    console.log(error)
-  } else {
-    setSession(data.session)
-  }
-}
-async function signUp() {
-  const { error } = await supabase.auth.signUp({
-    email,
-    password
-  })
-
-  if (error) {
-    console.log(error)
-  } else {
-    // 👇 immediately try login after signup
-    await signIn()
-  }
-}async function addNote() {
-  if (!noteText) return
-
-  await supabase.from('dailynotes').insert([
-    {
-      note: noteText,
-      spec: spec || null,
-      task_id: taskId ? Number(taskId) : null
-    }
-  ])
-
-  setNoteText('')
-  setSpec('')
-  setTaskId('')
-  fetchNotes()
-}
-  async function fetchTasks() {
-    const { data } = await supabase.from('tasks').select('*')
-    setTasks(data || [])
-  }
-
-
- 
- async function signOut() {
-  await supabase.auth.signOut()
-  setSession(null)
-}
-
-
-
-
- async function addTask() {
-  if (!newTask) return
-
-  await supabase.from('tasks').insert([
-    {
-      title: newTask,
-      completed: false,
-      due_date: dueDate || null,
-      status: status || null
-    }
-  ])
-
-  setNewTask('')
-  setDueDate('')
-  setStatus('')
-  fetchTasks()
-}
-async function updateDueDate(id: number, newDate: string) {
-  await supabase
-    .from('tasks')
-    .update({ due_date: newDate || null })
-    .eq('id', id)
-
-  fetchTasks()
-}
-function updateLocalTask(id, field, value) {
-  setTasks(prev =>
-    prev.map(t =>
-      t.id === id ? { ...t, [field]: value } : t
-    )
-  )
-}
- 
-async function updateTask(task) {
-  await supabase
-    .from('tasks')
-    .update({
-      due_date: task.due_date || null,
-      status: task.status || null,
-      completed_date: task.completed_date || null
-    })
-    .eq('id', task.id)
-
-  fetchTasks()
-}
-async function toggleTask(id: number, completed: boolean) {
-  await supabase
-    .from('tasks')
-    .update({ completed: !completed })
-    .eq('id', id)
-
-  fetchTasks()
-}
-
-  async function deleteTask(id: number) {
-    await supabase.from('tasks').delete().eq('id', id)
-    fetchTasks()
+    const { data } = await query
+    if (data) setTasks(data)
   }
 
   useEffect(() => {
     fetchTasks()
   }, [])
 
-const filteredTasks = tasks.filter(task => {
-  if (filter === 'active') return !task.completed
-  if (filter === 'completed') return task.completed
+  // ADD
+  const addTask = async () => {
+    if (!title) return
 
-  // DATE RANGE FILTER
-  if (fromDate && (!task.due_date || task.due_date < fromDate)) return false
-  if (toDate && (!task.due_date || task.due_date > toDate)) return false
+    await supabase.from('tasks').insert([
+      { title, due_date: dueDate || null, status },
+    ])
 
-  return true
-})
-if (loading) {
-  return <div className="p-4">Loading...</div>
+    setTitle('')
+    setDueDate('')
+    setStatus('')
+    fetchTasks()
+  }
+
+  // COMPLETE
+const toggleComplete = async (task: Task) => {
+  const isCompleting = !task.completed
+
+  await supabase
+    .from('tasks')
+    .update({
+      completed: isCompleting,
+      comp_date: isCompleting
+        ? new Date().toISOString().split('T')[0] // ✅ store date only
+        : null,
+    })
+    .eq('id', task.id)
+
+  fetchTasks()           // refresh open tasks
+  window.location.reload()
+  // we'll also refresh completed below
 }
-if (!session) {
+  // EDIT
+  const startEdit = (task: Task) => {
+    setEditingId(task.id)
+    setEditTitle(task.title)
+    setEditStatus(task.status || '')
+    setEditDueDate(task.due_date || '')
+  }
+
+  const saveEdit = async (id: string) => {
+    await supabase
+      .from('tasks')
+      .update({
+        title: editTitle,
+        status: editStatus,
+        due_date: editDueDate || null,
+      })
+      .eq('id', id)
+
+    setEditingId(null)
+    fetchTasks()
+  }
+
   return (
-   <main className="flex flex-col md:flex-row">
-      <div className="bg-white p-6 rounded shadow-md flex flex-col gap-2 w-full md:w-1/2">
-
+    <div style={card}>
+      
+        <div style={headerStyle('#16a34a')}>Tasks
+       
+          
+          </div>
+    
+      {/* ADD */}
+      <div style={{ padding: '12px 16px' }}>
+      <div style={row}>
         <input
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="email"
-          className="border px-2 py-1"
+          style={input}
+          placeholder="Task title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
         />
-
         <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="password"
-          className="border px-2 py-1"
+          style={smallInput}
+          type="date"
+          value={dueDate}
+          onChange={(e) => setDueDate(e.target.value)}
         />
+        <input
+          style={smallInput}
+          placeholder="Status"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+        />
+        <button style={addBtn} onClick={addTask}>+</button>
+      </div></div>
 
-        <button onClick={signIn} className="bg-blue-500 text-white px-2 py-1">
-          Login
-        </button>
 
-        <button onClick={signUp} className="bg-gray-300 text-black px-2 py-1">
-          Sign Up
-        </button>
-
+      {/* FILTER */}
+       <div style={{ padding: '12px 16px' }}>
+      <div style={row}>
+        <input
+          style={smallInput}
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+        />
+        <input
+          style={smallInput}
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+        />
+        <button style={filterBtn} onClick={fetchTasks}>Filter</button>
       </div>
-    </main>
+      </div>
+
+      {/* LIST */}
+      <div style={{ marginTop: 10 }}>
+        {tasks.map((task) => (
+          <div key={task.id} style={taskRow}>
+            <input
+              type="checkbox"
+              checked={task.completed}
+              onChange={() => toggleComplete(task)}
+            />
+
+            {editingId === task.id ? (
+              <>
+                <input
+                  style={input}
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                />
+                <input
+                  style={smallInput}
+                  type="date"
+                  value={editDueDate}
+                  onChange={(e) => setEditDueDate(e.target.value)}
+                />
+                <input
+                  style={smallInput}
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value)}
+                />
+                <button style={filterBtn} onClick={() => saveEdit(task.id)}>
+                  Save
+                </button>
+              </>
+            ) : (
+              <>
+                <span style={{ flex: 2 }}>
+                  <strong>{task.title}</strong>
+                </span>
+                <span style={{ flex: 1 }}>{task.due_date || '-'}</span>
+                <span style={{ flex: 1 }}>{task.status || '-'}</span>
+                <button style={editBtn} onClick={() => startEdit(task)}>
+                  Edit
+                </button>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+    
   )
 }
- return (
-  
-<main className="min-h-screen bg-gray-100 flex justify-center items-start p-6">
 
-  <div className="flex flex-col md:flex-row w-full max-w-6xl gap-6">
+// NOTES
+function NotesCard() {
+  const [noteDate, setNoteDate] = useState(
+    new Date().toISOString().split('T')[0]
+  )
+  const [note, setNote] = useState('')
 
-    {/* LEFT PANEL — TASK TRACKER */}
-    <div className="w-full md:w-1/2">
-      <div className="bg-white rounded-xl shadow-md w-full h-[800px] flex flex-col">
+  const fetchNote = async (date: string) => {
+    const { data } = await supabase
+      .from('notes')
+      .select('*')
+      .eq('note_date', date)
+      .single()
 
-        {/* HEADER */}
-        <div className="bg-purple-500 text-white  rounded-t-xl px-4 py-2">
-          <h1 className="text-lg font-bold text-center">
-            Task Tracker<div className="flex justify-between items-center mb-4">
-  
+    if (data) setNote(data.note)
+    else setNote('')
+  }
 
-  <button
-    onClick={signOut}
-    className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200"
-  >
-    Logout
-  </button>
-</div>
-          </h1>
-        </div>
+  useEffect(() => {
+    fetchNote(noteDate)
+  }, [noteDate])
 
-        {/* CONTENT */}
-        <div className="p-6 text-black">
+  const saveNote = async () => {
+    await supabase.from('notes').upsert(
+      { note_date: noteDate, note },
+      { onConflict: 'note_date' }
+    )
+  }
 
-          {/* ==== YOUR EXISTING TRACKER STARTS HERE ==== */}
+  return (
+   <div style={card}>
+  <div style={headerStyle('#9333ea')}>Notes</div>
 
-          <div className="flex gap-2 mb-4">
-            <input
-              value={newTask}
-              onChange={(e) => setNewTask(e.target.value)}
-              placeholder="Add a new task..."
-              className="flex-1 border rounded-md px-2 py-1 text-xs"
-            />
-
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="flex-1 border rounded-md px-2 py-1 text-xs"
-            />
-
-            <input
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              placeholder="Status"
-              className="flex-1 border rounded-md px-2 py-1 text-xs"
-            />
-
-            <button
-              onClick={addTask}
-              className="bg-white text-purple-600 w-8 h-8 flex items-center justify-center rounded-full shadow-md hover:shadow-lg active:scale-95 transition"
-            >
-              +
-            </button>
-          </div>
-
-          <div className="flex justify-center gap-2 mb-4">
-            <button
-              onClick={() => setFilter('all')}
-              className={`px-3 py-1 rounded-lg ${
-                filter === 'all' ? 'bg-blue-500 text-black' : 'bg-gray-200'
-              }`}
-            >
-              All
-            </button>
-
-            <button
-              onClick={() => setFilter('active')}
-              className={`px-3 py-1 rounded-lg ${
-                filter === 'active' ? 'bg-blue-500 text-black' : 'bg-gray-200'
-              }`}
-            >
-              Active
-            </button>
-
-            <button
-              onClick={() => setFilter('completed')}
-              className={`px-3 py-1 rounded-lg ${
-                filter === 'completed' ? 'bg-blue-500 text-white' : 'bg-gray-200'
-              }`}
-            >
-              Completed
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 mb-3 text-xs">
-            <span>From:</span>
-            <input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="border rounded px-1 py-0.5"
-            />
-
-            <span>To:</span>
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="border rounded px-1 py-0.5"
-            />
-
-            <button
-              onClick={setTodayToTomorrow}
-              className="text-xs bg-gray-200 px-2 py-1 rounded hover:bg-gray-300"
-            >
-              Today → Tomorrow
-            </button>
-          </div>
-
-         {/* SCROLLABLE TABLE */}
-<div className="overflow-x-auto touch-pan-x">
-  <div className="min-w-[700px]">
-
-    {/* HEADER */}
-    <div className="flex items-center px-2 mb-2 text-xs font-semibold text-gray-700">
-      <span className="w-32">Task</span>
-      <span className="w-36">Due Date</span>
-      <span className="w-40">Status</span>
-      <span className="w-36">Completed</span>
-      <span className="w-24 text-right ml-auto">Actions</span>
+  <div style={{ padding: 12 }}>
+    {/* DATE AT TOP */}
+    <div style={{ marginBottom: 10 }}>
+      <input
+        style={smallInput}
+        type="date"
+        value={noteDate}
+        onChange={(e) => setNoteDate(e.target.value)}
+      />
     </div>
 
-    {/* TASK LIST */}
-    <ul className="space-y-1">
-      {filteredTasks.map(task => (
-        <li
-          key={task.id}
-          className="flex items-center bg-gray-50 px-2 py-1 rounded-md hover:bg-gray-100"
-        >
-
-          <div
-            className="w-32 text-xs cursor-pointer hover:underline hover:text-purple-600"
-            onClick={() => {
-              console.log('clicked task', task.id)
-              createNoteFromTask(task)
-            }}
-          >
-            {task.title}
-          </div>
-
-          <div className="w-36">
-            <input
-              type="date"
-              value={task.due_date || ''}
-              onChange={(e) =>
-                updateLocalTask(task.id, 'due_date', e.target.value)
-              }
-              className="text-xs bg-transparent"
-            />
-          </div>
-
-          <div className="w-40">
-            <input
-              value={task.status || ''}
-              onChange={(e) =>
-                updateLocalTask(task.id, 'status', e.target.value)
-              }
-              className="text-xs bg-transparent"
-            />
-          </div>
-
-          <div className="w-36">
-            <input
-              type="date"
-              value={task.completed_date || ''}
-              onChange={(e) =>
-                updateLocalTask(task.id, 'completed_date', e.target.value)
-              }
-              className="text-xs bg-transparent"
-            />
-          </div>
-
-          <div className="w-24 flex justify-end gap-1">
-            <button onClick={() => updateTask(task)} className="text-sm">
-              💾
-            </button>
-
-            <button
-              onClick={() => toggleTask(task.id, task.completed)}
-              className={`text-sm ${
-                task.completed ? 'text-green-600' : 'text-gray-700'
-              }`}
-            >
-              👍
-            </button>
-
-            <button
-              onClick={() => deleteTask(task.id)}
-              className="text-red-500 text-sm"
-            >
-              ✕
-            </button>
-          </div>
-
-        </li>
-      ))}
-    </ul>
-
-  </div>
-</div>
-
-          {/* ==== YOUR EXISTING TRACKER ENDS HERE ==== */}
-
-        </div>
-      </div>
-    </div>
-
-    {/* RIGHT PANEL — MONTH VIEW */}
-    <div className="w-full md:w-1/2">
-      <div className="bg-white rounded-xl shadow-md w-full h-[800px] flex flex-col">
-            
-        <div className="bg-purple-500 text-white px-4 py-2  rounded-t-xl">
-          <h1 className="text-lg font-bold text-center">
-            Notes
-          </h1>
-        </div>
-        <div className="flex items-center justify-between mb-3">
-
-  {/* LEFT ARROW */}
-  <button
-    onClick={goToPreviousDay}
-    className="text-gray-500 hover:text-black text-lg px-2"
-  >
-    ←
-  </button>
-
-  {/* DATE */}
-  <div className="text-lg font-semibold text-gray-700 text-center">
-    {noteDate &&
-      parseLocalDate(noteDate).toLocaleDateString(undefined, {
-  weekday: 'long',
-  year: 'numeric',
-  month: 'long',
-  day: 'numeric'
-})}
-  </div>
-
-  {/* RIGHT ARROW */}
-  <button
-    onClick={goToNextDay}
-    className="text-gray-500 hover:text-black text-lg px-2"
-  >
-    →
-  </button>
-
-</div>
-
-        <div className="p-6 text-center text-gray-500 text-sm">
-          <div className="p-6">
-
-  {/* DATE SELECT */}
-  <input
-    type="date"
-    value={noteDate}
-    onChange={(e) => setNoteDate(e.target.value)}
-    className="border rounded px-2 py-1 text-xs mb-3"
-  />
-
-  {/* INPUT ROW */}
-  <div className="flex gap-2 mb-4">
-    <input
-      value={noteText}
-      onChange={(e) => setNoteText(e.target.value)}
-      placeholder="Write note..."
-      className="flex-1 border rounded px-2 py-1 text-xs"
+    {/* FULL WIDTH TEXT AREA */}
+    <textarea
+      style={{
+        width: '100%',
+        height: 200,
+        padding: 10,
+        borderRadius: 8,
+        border: '1px solid #ccc',
+        resize: 'vertical',
+      }}
+      value={note}
+      onChange={(e) => setNote(e.target.value)}
+      placeholder="Write your notes..."
     />
 
-    <input
-      value={spec}
-      onChange={(e) => setSpec(e.target.value)}
-      placeholder="spec"
-      className="w-20 border rounded px-2 py-1 text-xs"
-    />
-
-    <input
-      value={taskId}
-      onChange={(e) => setTaskId(e.target.value)}
-      placeholder="task"
-      className="w-16 border rounded px-2 py-1 text-xs"
-    />
-
-    <button
-      onClick={addNote}
-      className="bg-white text-purple-600 w-8 h-8 flex items-center justify-center rounded-full shadow-md"
-    >
-      +
+    <button style={filterBtn} onClick={saveNote}>
+      Save
     </button>
   </div>
-
-  {/* NOTES LIST */}
-  <div className="space-y-1 text-xs">
-    {notes.map(note => (
-      <div key={note.id} className="bg-gray-50 px-2 py-1 rounded">
-
-        <div>{note.note}</div>
-
-        <div className="text-gray-700 flex gap-2">
-          {note.spec && <span>#{note.spec}</span>}
-          {note.task_id && <span>task:{note.task_id}</span>}
-        </div>
-
-      </div>
-    ))}
-  </div>
-
 </div>
-        </div>
+  )
+}
 
-      </div>
+function IntentionsCard() {
+  const [date, setDate] = useState(
+    new Date().toISOString().split('T')[0]
+  )
+  const [text, setText] = useState('')
+  const [recent, setRecent] = useState<any[]>([])
+
+  // load today's intention + last 5
+  const fetchIntentions = async () => {
+    // today
+    const { data: today } = await supabase
+      .from('intentions')
+      .select('*')
+      .eq('intention_date', date)
+      .single()
+
+    if (today) setText(today.text)
+    else setText('')
+
+    // last 5 days
+    const { data } = await supabase
+      .from('intentions')
+      .select('*')
+      .order('intention_date', { ascending: false })
+      .limit(5)
+
+    if (data) setRecent(data)
+  }
+
+  useEffect(() => {
+    fetchIntentions()
+  }, [date])
+
+  const save = async () => {
+    await supabase.from('intentions').upsert(
+      {
+        intention_date: date,
+        text,
+      },
+      { onConflict: 'intention_date' }
+    )
+
+    fetchIntentions()
+  }
+
+
+
+
+  
+  return (
+    <div style={card}>
+  <div style={headerStyle('#f97316')}>Intention</div>
+
+  <div style={{ padding: 12 }}>
+    {/* DATE AT TOP */}
+    <div style={{ marginBottom: 10 }}>
+      <input
+        style={smallInput}
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+      />
     </div>
 
-  </div>
+    {/* LABEL */}
+    <div style={{ marginBottom: 6, fontWeight: 500 }}>
+      Today I ..will.
+    </div>
 
-</main>)
+    {/* FULL WIDTH TEXT */}
+    <textarea
+      style={{
+        width: '100%',
+        height: 120,
+        padding: 10,
+        borderRadius: 8,
+        border: '1px solid #ccc',
+        resize: 'vertical',
+      }}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      placeholder="Today I will."
+    />
+
+    <button style={filterBtn} onClick={save}>
+      Save
+    </button>
+
+    {/* LAST 5 DAYS */}
+    <div style={{ marginTop: 20 }}>
+      <h4>Last 5 Days</h4>
+
+      {recent.map((item) => (
+        <div key={item.id} style={taskRow}>
+          <div style={{ width: 100 }}>
+            {item.intention_date}
+          </div>
+          <div>{item.text}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+</div>
+  )
+}
+
+function DayRatingCard() {
+  const [recent, setRecent] = useState<any[]>([])
+  const [chartData, setChartData] = useState<any[]>([])
+  const [date, setDate] = useState(
+    new Date().toISOString().split('T')[0]
+  )
+  const [text, setText] = useState('')
+  const [rating, setRating] = useState<number | null>(null)
+
+  const emojis = ['😞', '😐', '🙂', '😊', '😄']
+
+  const fetchRating = async () => {
+  // current day
+  const { data } = await supabase
+    .from('day_ratings')
+    .select('*')
+    .eq('rating_date', date)
+    .single()
+
+  if (data) {
+    setText(data.what_went_well || '')
+    setRating(data.rating)
+  } else {
+    setText('')
+    setRating(null)
+  }
+
+  // last 5 days
+  const { data: recentData } = await supabase
+    .from('day_ratings')
+    .select('*')
+    .order('rating_date', { ascending: false })
+    .limit(5)
+
+  if (recentData) setRecent(recentData)
+
+    const { data: chart } = await supabase
+  .from('day_ratings')
+  .select('*')
+  .order('rating_date', { ascending: true })
+  .limit(10)
+
+if (chart) setChartData(chart)
+}
+  useEffect(() => {
+    fetchRating()
+  }, [date])
+
+  const save = async () => {
+    await supabase.from('day_ratings').upsert(
+      {
+        rating_date: date,
+        what_went_well: text,
+        rating,
+      },
+      { onConflict: 'rating_date' }
+    )
+  }
+
+  return (
+  <div style={card}>
+  <div style={headerStyle('#3b82f6')}>Rate the Day</div>
+
+  <div style={{ padding: 12 }}>
+    {/* DATE AT TOP */}
+    <div style={{ marginBottom: 10 }}>
+      <input
+        style={smallInput}
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+      />
+    </div>
+
+    {/* TEXT */}
+    <div style={{ marginBottom: 6, fontWeight: 500 }}>
+      What went well
+    </div>
+
+    <textarea
+      style={{
+        width: '100%',
+        height: 120,
+        padding: 10,
+        borderRadius: 8,
+        border: '1px solid #ccc',
+        resize: 'vertical',
+      }}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      placeholder="What went well..."
+    />
+
+    {/* RATING */}
+    <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+      {emojis.map((emoji, i) => (
+        <button
+          key={i}
+          onClick={() => setRating(i + 1)}
+          style={{
+            fontSize: 24,
+            padding: 6,
+            borderRadius: 6,
+            border:
+              rating === i + 1
+                ? '2px solid #3b82f6'
+                : '1px solid #ccc',
+            background: 'white',
+            cursor: 'pointer',
+          }}
+        >
+          {emoji}
+        </button>
+      ))}
+    </div>
+
+    <button style={filterBtn} onClick={save}>
+      Save
+    </button>
+    <div style={{ marginTop: 20 }}>
+  <h4>Last 5 Days</h4>
+
+  {recent.map((item) => (
+    <div key={item.id} style={taskRow}>
+      <div style={{ width: 100 }}>
+        {item.rating_date}
+      </div>
+
+      <div style={{ width: 50 }}>
+        {['😞','😐','🙂','😊','😄'][item.rating - 1]}
+      </div>
+
+      <div>{item.what_went_well}</div>
+    </div>
+  ))}
+</div>
+  </div>
+</div>  )
+}
+
+
+function CompletedTasksCard() {
+  const today = new Date()
+  const twoDaysAgo = new Date()
+  twoDaysAgo.setDate(today.getDate() - 2)
+
+  const format = (d: Date) => d.toISOString().split('T')[0]
+
+  const [startDate, setStartDate] = useState(format(twoDaysAgo))
+  const [endDate, setEndDate] = useState(format(today))
+  const [tasks, setTasks] = useState<any[]>([])
+
+  const fetchCompleted = async () => {
+    let query = supabase
+      .from('tasks')
+      .select('*')
+      .eq('completed', true)
+      .order('comp_date', { ascending: false })
+
+    if (startDate) query = query.gte('comp_date', startDate)
+    if (endDate) query = query.lte('comp_date', endDate)
+
+    const { data } = await query
+    if (data) setTasks(data)
+  }
+
+  useEffect(() => {
+  fetchCompleted()
+}, [startDate, endDate])
+
+  return (
+    <div style={card}>
+      <div style={headerStyle('#0ea5e9')}><h2>Completed Tasks</h2>
+       
+          </div>
+      
+
+      {/* Filter */}
+      <div style={row }>
+        <div style={{ padding: '12px 16px' }}>
+        <input
+          style={smallInput}
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+        />
+        <input
+          style={smallInput}
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+        />
+        <button style={filterBtn} onClick={fetchCompleted}>
+          Filter
+        </button>
+      </div>
+      </div>
+      
+
+      {/* List */}
+      <div style={{ padding: '12px 16px' }}>
+        
+      <div style={{ marginTop: 10 }}>
+        {tasks.length === 0 && <div>No completed tasks</div>}
+
+        {tasks.map((task) => (
+          <div key={task.id} style={taskRow}>
+            <span style={{ flex: 2 }}>
+              <strong>{task.title}</strong>
+            </span>
+
+            <span style={{ flex: 1 }}>
+              {task.comp_date || '-'}
+            </span>
+
+            <span style={{ flex: 1 }}>
+              {task.status || '-'}
+            </span>
+          </div>
+        ))}
+      </div></div>
+      
+    </div>
+  )
+}
+
+// STYLES
+const styles = {
+  page: {
+    background: '#e5e7eb',
+    minHeight: '100vh',
+    display: 'flex',
+    justifyContent: 'center',
+    paddingTop: 40,
+  },
+
+container: {
+  background: '#f3f4f6',
+  padding: 20,
+  width: '100%',
+  maxWidth: 1100,      // ~2/3 feel but responsive
+  margin: '0 auto',
+},
+  title: {
+    textAlign: 'center' as const,
+    marginBottom: 20,
+  },
+cards: {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(3, 1fr)', // ✅ force 3 columns
+  gap: 20,
+},
+}
+
+function HabitsCard() {
+  
+  
+const deleteHabit = async (id: string) => {
+  await supabase.from('habits').delete().eq('id', id)
+
+  fetchHabits()
+}
+
+
+  const today = new Date()
+  const todayStr = today.toISOString().split('T')[0]
+  const weekday = today.getDay()
+
+  const [habits, setHabits] = useState<any[]>([])
+  const [logs, setLogs] = useState<any[]>([])
+  const [newHabit, setNewHabit] = useState('')
+
+  const [frequencyType, setFrequencyType] = useState('daily')
+  const [intervalDays, setIntervalDays] = useState(3)
+  const [habitWeekday, setHabitWeekday] = useState(6)
+
+  const fetchHabits = async () => {
+    const { data } = await supabase.from('habits').select('*')
+    if (data) setHabits(data)
+
+    const { data: logData } = await supabase
+      .from('habit_logs')
+      .select('*')
+      .eq('log_date', todayStr)
+
+    if (logData) setLogs(logData)
+  }
+
+  useEffect(() => {
+    fetchHabits()
+  }, [])
+
+  const isDueToday = (habit: any) => {
+    if (habit.frequency_type === 'daily') return true
+
+    if (habit.frequency_type === 'weekly') {
+      return habit.weekday === weekday
+    }
+
+    if (habit.frequency_type === 'interval') {
+      const start = new Date(habit.start_date)
+      const diff = Math.floor(
+        (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+      )
+      return diff % habit.interval_days === 0
+    }
+
+    return false
+  }
+
+ 
+
+
+ const isCompleted = (habitId: string) => {
+  return logs.some((l) => l.habit_id === habitId)
+}
+const dueHabits = habits.filter(isDueToday)
+
+const allCompleted =
+  dueHabits.length > 0 &&
+  dueHabits.every((h) => isCompleted(h.id))  
+  const toggleHabit = async (habitId: string) => {
+    const exists = logs.find((l) => l.habit_id === habitId)
+
+    if (exists) {
+      await supabase.from('habit_logs').delete().eq('id', exists.id)
+    } else {
+      await supabase.from('habit_logs').insert([
+        { habit_id: habitId, log_date: todayStr },
+      ])
+    }
+
+    fetchHabits()
+  }
+
+  const addHabit = async () => {
+    if (!newHabit) return
+
+    await supabase.from('habits').insert([
+      {
+        name: newHabit,
+        frequency_type: frequencyType,
+        interval_days:
+          frequencyType === 'interval' ? intervalDays : null,
+        weekday:
+          frequencyType === 'weekly' ? habitWeekday : null,
+        start_date: todayStr,
+      },
+    ])
+
+    setNewHabit('')
+    fetchHabits()
+  }
+
+  return (
+  <div style={card}>
+    <div style={headerStyle('#22c55e')}>Habits</div>
+
+    <div style={{ padding: 12 }}>
+    {allCompleted ? (
+  <Celebration />
+) : (
+  <>
+          {/* ADD */}
+          <div style={{ marginTop: 10 }}>
+            <input
+              style={input}
+              placeholder="New habit"
+              value={newHabit}
+              onChange={(e) => setNewHabit(e.target.value)}
+            />
+
+            <div style={{ marginTop: 8 }}>
+              <select
+                value={frequencyType}
+                onChange={(e) => setFrequencyType(e.target.value)}
+                style={smallInput}
+              >
+                <option value="daily">Daily</option>
+                <option value="interval">Every X Days</option>
+                <option value="weekly">Specific Day</option>
+              </select>
+            </div>
+
+            {frequencyType === 'interval' && (
+              <div style={{ marginTop: 8 }}>
+                <input
+                  type="number"
+                  min="1"
+                  value={intervalDays}
+                  onChange={(e) =>
+                    setIntervalDays(Number(e.target.value))
+                  }
+                  style={smallInput}
+                />
+                <span style={{ marginLeft: 6 }}>days</span>
+              </div>
+            )}
+
+            {frequencyType === 'weekly' && (
+              <div style={{ marginTop: 8 }}>
+                <select
+                  value={habitWeekday}
+                  onChange={(e) =>
+                    setHabitWeekday(Number(e.target.value))
+                  }
+                  style={smallInput}
+                >
+                  <option value={0}>Sunday</option>
+                  <option value={1}>Monday</option>
+                  <option value={2}>Tuesday</option>
+                  <option value={3}>Wednesday</option>
+                  <option value={4}>Thursday</option>
+                  <option value={5}>Friday</option>
+                  <option value={6}>Saturday</option>
+                </select>
+              </div>
+            )}
+
+            <button style={addBtn} onClick={addHabit}>
+              Add Habit
+            </button>
+          </div>
+
+          {/* LIST */}
+          <div style={{ marginTop: 10 }}>
+            {dueHabits.map((habit) => (
+              <div key={habit.id} style={taskRow}>
+                <input
+                  type="checkbox"
+                  checked={isCompleted(habit.id)}
+                  onChange={() => toggleHabit(habit.id)}
+                />
+
+                <span style={{ flex: 1 }}>{habit.name}</span>
+
+                <button
+                  style={deleteBtn}
+                  onClick={() => deleteHabit(habit.id)}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  </div>
+)
+
+}
+
+function Celebration() {
+  return (
+    <div
+      style={{
+        textAlign: 'center',
+        padding: 20,
+        position: 'relative',
+      }}
+    >
+      {/* Firework Image */}
+      <img
+        src="/fireworks.gif"
+        alt="celebration"
+        style={{
+          width: 200,
+          height: 200,
+          objectFit: 'contain',
+          animation: 'pop 0.6s ease-out',
+        }}
+      />
+
+      {/* Text */}
+      <div style={{ marginTop: 10, fontSize: 18, fontWeight: 600 }}>
+        All habits complete! 🔥
+      </div>
+
+      <div style={{ fontSize: 14, color: '#6b7280' }}>
+        Strong finish today
+      </div>
+    </div>
+  )
+}
+
+const twoThirds = {
+  gridColumn: 'span 3', // ✅ takes 2 out of 3 columns
+}
+ const card = {
+  border: '1px solid #ddd',
+  borderRadius: 12,
+  background: '#fff',
+  overflow: 'hidden',
+ boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
+}
+
+const row = {
+  display: 'flex',
+  gap: 8,
+  marginTop: 10,
+}
+
+const input = {
+  flex: 1,
+  padding: 8,
+  borderRadius: 6,
+  border: '1px solid #ccc',
+}
+const deleteBtn = {
+  background: '#ef4444',
+  color: 'white',
+  border: 'none',
+  padding: '4px 8px',
+  borderRadius: 6,
+  cursor: 'pointer',
+}
+
+const smallInput = {
+  width: 120,
+  padding: 8,
+  borderRadius: 6,
+  border: '1px solid #ccc',
+}
+
+const addBtn = {
+  background: '#22c55e',
+  color: 'white',
+  border: 'none',
+  padding: '0 12px',
+  borderRadius: 6,
+}
+
+const filterBtn = {
+  background: '#3b82f6',
+  color: 'white',
+  border: 'none',
+  padding: '8px 12px',
+  borderRadius: 6,
+  marginTop: 10,
+}
+
+const editBtn = {
+  background: '#f59e0b',
+  color: 'white',
+  border: 'none',
+  padding: '6px 10px',
+  borderRadius: 6,
+}
+
+const taskRow = {
+  display: 'flex',
+  gap: 10,
+  padding: 8,
+  border: '1px solid #eee',
+  borderRadius: 6,
+  marginTop: 6,
 }
