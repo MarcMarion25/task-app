@@ -537,6 +537,9 @@ export default function Home() {
 <div style={{ ...twoThirds, marginBottom: 20 }}>
 <HabitsCard />
 </div>  
+<div style={{ ...twoThirds, marginBottom: 20 }}>
+  <NotesSearchCard />
+</div>
 
 
 </div>
@@ -691,6 +694,7 @@ const toggleComplete = async (task: Task) => {
           <div key={task.id} style={taskRow}>
             <input
               type="checkbox"
+               style={{ transform: 'scale(2)', cursor: 'pointer' }}
               checked={task.completed}
               onChange={() => toggleComplete(task)}
             />
@@ -719,11 +723,16 @@ const toggleComplete = async (task: Task) => {
               </>
             ) : (
               <>
-                <span style={{ flex: 2 }}>
-                  <strong>{task.title}</strong>
-                </span>
+               <span style={{ flex: 2, display: 'flex', gap: 8, alignItems: 'center' }}>
+  <strong>#{task.id}</strong>
+  <strong>{task.title}</strong>
+</span>
                 <span style={{ flex: 1 }}>{task.due_date || '-'}</span>
                 <span style={{ flex: 1 }}>{task.status || '-'}</span>
+
+
+                
+
                 <button style={editBtn} onClick={() => startEdit(task)}>
                   Edit
                 </button>
@@ -739,32 +748,54 @@ const toggleComplete = async (task: Task) => {
 
 // NOTES
 function NotesCard() {
+  const [notes, setNotes] = useState<any[]>([])
+  const [tag, setTag] = useState('')
   const [noteDate, setNoteDate] = useState(
     getTodayStr()
   )
   const [note, setNote] = useState('')
 
   const fetchNote = async (date: string) => {
-    const { data } = await supabase
-      .from('notes')
-      .select('*')
-      .eq('note_date', date)
-      .single()
+  const { data } = await supabase
+    .from('dailynotes')
+    .select('*')
+    .eq('date', date)
+    .order('created_at', { ascending: false })
 
-    if (data) setNote(data.note)
-    else setNote('')
+  if (data) {
+    setNotes(data)   // 👈 store ARRAY now
+  } else {
+    setNotes([])
   }
+}
 
   useEffect(() => {
     fetchNote(noteDate)
   }, [noteDate])
 
-  const saveNote = async () => {
-    await supabase.from('notes').upsert(
-      { note_date: noteDate, note },
-      { onConflict: 'note_date' }
-    )
+const saveNote = async () => {
+  if (!note) return
+
+  const { data, error } = await supabase
+    .from('dailynotes')
+    .insert([
+      {
+        date: noteDate,
+        note: note,
+        tag: tag
+      }
+    ])
+
+  console.log('SAVE:', { data, error })
+
+  if (error) {
+    alert(error.message)
+  } else {
+    setNote('')
+    setTag('')
+    fetchNote(noteDate)
   }
+}
 
   return (
    <div style={card}>
@@ -779,13 +810,19 @@ function NotesCard() {
         value={noteDate}
         onChange={(e) => setNoteDate(e.target.value)}
       />
+       <input
+    style={smallInput}
+    value={tag}
+    onChange={(e) => setTag(e.target.value)}
+    placeholder="tag"
+  />
     </div>
 
     {/* FULL WIDTH TEXT AREA */}
     <textarea
       style={{
         width: '100%',
-        height: 200,
+        height: 50,
         padding: 10,
         borderRadius: 8,
         border: '1px solid #ccc',
@@ -795,6 +832,19 @@ function NotesCard() {
       onChange={(e) => setNote(e.target.value)}
       placeholder="Write your notes..."
     />
+    {notes.map((n) => (
+  <div key={n.id} style={{ marginTop: 10 }}>
+    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+  <div>{n.note}</div>
+
+  {n.tag && (
+    <div style={{ fontSize: 12, color: '#9333ea' }}>
+      #{n.tag}
+    </div>
+  )}
+</div>
+  </div>
+))}
 
     <button style={filterBtn} onClick={saveNote}>
       Save
@@ -817,8 +867,8 @@ function IntentionsCard() {
     const { data: today } = await supabase
       .from('intentions')
       .select('*')
-      .eq('intention_date', date)
-      .single()
+     .eq('date', date)
+      .maybeSingle()
 
     if (today) setText(today.text)
     else setText('')
@@ -827,7 +877,7 @@ function IntentionsCard() {
     const { data } = await supabase
       .from('intentions')
       .select('*')
-      .order('intention_date', { ascending: false })
+      .order('date', { ascending: false })
       .limit(5)
 
     if (data) setRecent(data)
@@ -838,16 +888,24 @@ function IntentionsCard() {
   }, [date])
 
   const save = async () => {
-    await supabase.from('intentions').upsert(
+  const { data, error } = await supabase
+    .from('intentions')
+    .upsert(
       {
-        intention_date: date,
-        text,
+        date,
+        intention: text,
       },
-      { onConflict: 'intention_date' }
+      { onConflict: 'date' }
     )
 
-    fetchIntentions()
+  console.log('SAVE RESULT:', { data, error })
+
+  if (error) {
+    alert(error.message)
   }
+
+  fetchIntentions()
+}
 
 
 
@@ -899,9 +957,9 @@ function IntentionsCard() {
       {recent.map((item) => (
         <div key={item.id} style={taskRow}>
           <div style={{ width: 100 }}>
-            {item.intention_date}
+            {item.date}
           </div>
-          <div>{item.text}</div>
+          <div>{item.intention}</div>
         </div>
       ))}
     </div>
@@ -1484,6 +1542,7 @@ const shouldCelebrate =
     <div key={habit.id} style={taskRow}>
               <input
                 type="checkbox"
+                 style={{ transform: 'scale(2)', cursor: 'pointer' }}
                 checked={isCompleted(habit.id)}
                 onChange={() => toggleHabit(habit.id)}
               />
@@ -1595,6 +1654,124 @@ useEffect(() => {
   )
 }
 
+function NotesSearchCard() {
+  const [date, setDate] = useState('')
+  const [tag, setTag] = useState('')
+  const [keyword, setKeyword] = useState('')
+  const [taskId, setTaskId] = useState('')
+  const [results, setResults] = useState<any[]>([])
+
+ const search = async () => {
+  let query = supabase
+    .from('dailynotes')
+    .select('*')
+    .order('date', { ascending: false })   // ✅ FIXED
+
+  const cleanKeyword = keyword.trim()
+  const cleanTag = tag.trim()
+  const cleanDate = date.trim()
+
+  if (cleanDate) {
+    query = query.eq('date', cleanDate)   // ✅ FIXED
+  }
+
+  if (cleanTag) {
+    query = query.ilike('tag', `%${cleanTag}%`)
+  }
+
+  if (cleanKeyword) {
+    query = query.ilike('note', `%${cleanKeyword}%`)
+  }
+
+  const { data, error } = await query
+
+  console.log('RESULTS:', data, error)
+
+  setResults(data || [])
+}
+  return (
+    <div style={card}>
+      <div style={headerStyle('#6366f1')}>Search Notes</div>
+
+      <div style={{ padding: 12 }}>
+        {/* FILTERS */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          
+          <input
+            style={smallInput}
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+
+          <input
+            style={smallInput}
+            placeholder="tag"
+            value={tag}
+            onChange={(e) => setTag(e.target.value)}
+          />
+
+          <input
+            style={input}
+            placeholder="keyword"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+          />
+
+          <input
+            style={smallInput}
+            placeholder="task #"
+            value={taskId}
+            onChange={(e) => setTaskId(e.target.value)}
+          />
+
+          <button style={filterBtn} onClick={search}>
+            Search
+          </button>
+        </div>
+
+        {/* RESULTS */}
+        <div style={{ marginTop: 15 }}>
+          {results.length === 0 && <div>No results</div>}
+
+          {results.map((n) => (
+            <div key={n.id} style={taskRow}>
+              
+              <div style={{ width: 90 }}>
+                {n.note_date}
+              </div>
+
+              <div style={{ flex: 1, display: 'flex', gap: 8 }}>
+                <div>{n.note}</div>
+
+                {n.tag && (
+                  <span
+                    style={{
+                      background: '#f3e8ff',
+                      color: '#9333ea',
+                      padding: '2px 6px',
+                      borderRadius: 12,
+                      fontSize: 10
+                    }}
+                  >
+                    #{n.tag}
+                  </span>
+                )}
+
+                {n.task_id && (
+                  <span style={{ fontSize: 11, color: '#555' }}>
+                    task:{n.task_id}
+                  </span>
+                )}
+              </div>
+
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const twoThirds = {
   gridColumn: 'span 3', // ✅ takes 2 out of 3 columns
