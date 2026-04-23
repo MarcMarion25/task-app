@@ -146,7 +146,7 @@ const quotes = [
 "I think one day you’ll find that you’re the hero you’ve been looking for.—Jimmy Stewart",
 "If all I do in my life is soothe someone’s spirit with a song , then let me do that and I’m happy.— Gladys Knight",
 "Life becomes easier when you learn to accept the apology you never got.—R. Brault",
-"There are times in all of our lives when a reliance on gut or intuition just seems more appropriate, when a particular course of action just feels right. And, interestingly, I’ve discovered it’s in facing life’s most important decisions that intuition seems the most indispensable.—Tim Cook",
+"There are times in all of our lives when a reliance on gut or intuition just seems more appropriate when a particular course of action just feels right. And, interestingly I’ve discovered it’s in facing life’s most important decisions that intuition seems the most indispensable.—Tim Cook",
 "All labor that uplifts humanity has dignity and importance.— Martin Luther King Jr.",
 "You may think using Google’s great, but I still think it’s terrible.— Larry Page",
 "It’s tough to get out of bed to do roadwork at 5 a.m. when you’ve been sleeping in silk pajamas.—Marvin Hagler",
@@ -499,6 +499,10 @@ type Task = {
 
 // MAIN PAGE
 export default function Home() {
+  useEffect(() => {
+  generateRecurringTasks()
+}, [])
+
   return (
     <div style={styles.page}>
       <div style={styles.container}>
@@ -509,7 +513,8 @@ export default function Home() {
 
 
        <div style={styles.cards}>
-  
+
+
   <div style={{ ...oneThird, marginBottom: 20}}>
 <AffirmationCard />
 </div>
@@ -548,8 +553,80 @@ export default function Home() {
     </div>
   )
 }
+const isTaskDueToday = (task: any) => {
+  const today = new Date()
+  const day = today.getDay()
+
+  if (task.frequency_type === 'daily') return true
+
+  if (task.frequency_type === 'weekly') {
+    return task.weekday === day
+  }
+
+  if (task.frequency_type === 'interval') {
+    const start = new Date(task.created_at)
+    const diff = Math.floor(
+      (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+    )
+    return diff % task.interval_days === 0
+  }
+
+  if (task.frequency_type === 'monthly') {
+    return today.getDate() === new Date(task.created_at).getDate()
+  }
+
+  return false
+}
+
+const generateRecurringTasks = async () => {
+  const today = getTodayStr()
+
+  const { data: tasks } = await supabase
+    .from('tasks')
+    .select('*')
+
+  if (!tasks) return
+
+  for (const task of tasks) {
+
+    // ❌ skip generated tasks
+    if (task.parent_id) continue
+
+    // ❌ skip one-time tasks
+   if (!task.frequency_type || task.frequency_type === 'once') continue
+    // ❌ skip if not due today
+    if (!isTaskDueToday(task)) continue
+
+    // ✅ check if already created today
+    const { data: existing } = await supabase
+      .from('tasks')
+      .select('id')
+      .eq('parent_id', task.id)
+      .eq('due_date', today)
+
+    if (existing && existing.length > 0) continue
+
+    // ✅ create instance
+    await supabase.from('tasks').insert([
+      {
+        title: task.title,
+        due_date: today,
+        status: task.status,
+        completed: false,
+        parent_id: task.id,
+        frequency_type: 'once'
+      }
+    ])
+  }
+}
+
+
+
 // TASKS CARD
 function TasksCard() {
+  const [frequencyType, setFrequencyType] = useState('once')
+const [intervalDays, setIntervalDays] = useState(3)
+const [weekday, setWeekday] = useState(1)
   const [title, setTitle] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [status, setStatus] = useState('')
@@ -586,9 +663,16 @@ function TasksCard() {
   const addTask = async () => {
     if (!title) return
 
-    await supabase.from('tasks').insert([
-      { title, due_date: dueDate || null, status },
-    ])
+   await supabase.from('tasks').insert([
+  {
+    title,
+    due_date: dueDate || null,
+    status,
+    frequency_type: frequencyType,
+    interval_days: frequencyType === 'interval' ? intervalDays : null,
+    weekday: frequencyType === 'weekly' ? weekday : null,
+  }
+])
 
     setTitle('')
     setDueDate('')
@@ -596,6 +680,36 @@ function TasksCard() {
     fetchTasks()
   }
 
+ const isTaskDueToday = (task: any) => {
+  const today = new Date()
+  const day = today.getDay()
+
+  // ONE-TIME
+  if (task.frequency_type === 'once') {
+    return !task.completed
+  }
+
+  // DAILY
+  if (task.frequency_type === 'daily') {
+    return task.comp_date !== getTodayStr()
+  }
+
+  // WEEKLY
+  if (task.frequency_type === 'weekly') {
+    return task.weekday === day && task.comp_date !== getTodayStr()
+  }
+
+  // INTERVAL
+  if (task.frequency_type === 'interval') {
+    const start = new Date(task.created_at)
+    const diff = Math.floor(
+      (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+    )
+    return diff % task.interval_days === 0 && task.comp_date !== getTodayStr()
+  }
+
+  return false
+}
   // COMPLETE
 const toggleComplete = async (task: Task) => {
   const isCompleting = !task.completed
@@ -665,8 +779,44 @@ const toggleComplete = async (task: Task) => {
           value={status}
           onChange={(e) => setStatus(e.target.value)}
         />
+        <select
+  value={frequencyType}
+  onChange={(e) => setFrequencyType(e.target.value)}
+  style={smallInput}
+>
+  <option value="once">One-time</option>
+  <option value="daily">Daily</option>
+  <option value="weekly">Weekly</option>
+  <option value="monthly">Monthly</option>
+  <option value="interval">Every X days</option>
+</select>
+{frequencyType === 'interval' && (
+  <input
+    type="number"
+    value={intervalDays}
+    onChange={(e) => setIntervalDays(Number(e.target.value))}
+    style={smallInput}
+  />
+)}
+
+{frequencyType === 'weekly' && (
+  <select
+    value={weekday}
+    onChange={(e) => setWeekday(Number(e.target.value))}
+    style={smallInput}
+  >
+    <option value={0}>Sun</option>
+    <option value={1}>Mon</option>
+    <option value={2}>Tue</option>
+    <option value={3}>Wed</option>
+    <option value={4}>Thu</option>
+    <option value={5}>Fri</option>
+    <option value={6}>Sat</option>
+  </select>
+)}
         <button style={addBtn} onClick={addTask}>+</button>
       </div></div>
+
 
 
       {/* FILTER */}
@@ -1227,7 +1377,7 @@ function QuoteCard() {
   padding: 16,
   fontStyle: 'italic',
   fontSize: 15,
-  lineHeight: 7,
+  lineHeight: 1.5,
   textAlign: 'center'
 }}>
         {quote}
@@ -1645,7 +1795,7 @@ useEffect(() => {
        padding: 16,
   fontStyle: 'italic',
   fontSize: 15,
-  lineHeight: 4,
+  lineHeight: 1.5,
   textAlign: 'center'
 }}>
         {affirmation}
