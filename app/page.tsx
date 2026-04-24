@@ -499,9 +499,61 @@ type Task = {
 
 // MAIN PAGE
 export default function Home() {
+
+
   useEffect(() => {
   generateRecurringTasks()
 }, [])
+
+const generateHabitLogs = async () => {
+  const today = getTodayStr()
+  const now = new Date()
+  const weekday = now.getDay()
+
+  const { data: habits } = await supabase
+    .from('habits')
+    .select('*')
+
+  if (!habits) return
+
+  for (const habit of habits) {
+    // check if due today
+    let isDue = false
+
+    if (habit.frequency_type === 'daily') isDue = true
+
+    if (habit.frequency_type === 'weekly') {
+      isDue = habit.weekday === weekday
+    }
+
+    if (habit.frequency_type === 'interval') {
+      const start = new Date(habit.start_date)
+      const diff = Math.floor(
+        (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+      )
+      isDue = diff % habit.interval_days === 0
+    }
+
+    if (!isDue) continue
+
+    // check if already exists
+    const { data: existing } = await supabase
+      .from('habit_logs')
+      .select('id')
+      .eq('habit_id', habit.id)
+      .eq('log_date', today)
+
+    if (existing && existing.length > 0) continue
+
+    // create log entry
+    await supabase.from('habit_logs').insert([
+      {
+        habit_id: habit.id,
+        log_date: today
+      }
+    ])
+  }
+}
 
   return (
     <div style={styles.page}>
@@ -1119,6 +1171,7 @@ function IntentionsCard() {
 }
 
 function DayRatingCard() {
+  
   const [recent, setRecent] = useState<any[]>([])
   const [chartData, setChartData] = useState<any[]>([])
   const [date, setDate] = useState(
@@ -1126,6 +1179,12 @@ function DayRatingCard() {
   )
   const [text, setText] = useState('')
   const [rating, setRating] = useState<number | null>(null)
+  const getColor = (r: number) => {
+  if (r <= 3) return '#ef4444'   // red
+  if (r <= 6) return '#f59e0b'   // orange
+  if (r <= 8) return '#3b82f6'   // blue
+  return '#22c55e'               // green
+}
 
   const emojis = ['😞', '😐', '🙂', '😊', '😄']
 
@@ -1212,27 +1271,26 @@ if (chart) setChartData(chart)
     />
 
     {/* RATING */}
-    <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-      {emojis.map((emoji, i) => (
-        <button
-          key={i}
-          onClick={() => setRating(i + 1)}
-          style={{
-            fontSize: 24,
-            padding: 6,
-            borderRadius: 6,
-            border:
-              rating === i + 1
-                ? '2px solid #3b82f6'
-                : '1px solid #ccc',
-            background: 'white',
-            cursor: 'pointer',
-          }}
-        >
-          {emoji}
-        </button>
-      ))}
-    </div>
+ <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+  {[...Array(11)].map((_, i) => (
+    <button
+      key={i}
+      onClick={() => setRating(i)}
+      style={{
+        width: 32,
+        height: 32,
+        borderRadius: 6,
+        border: rating === i ? '2px solid #3b82f6' : '1px solid #ccc',
+        background: 'white',
+        cursor: 'pointer',
+        fontWeight: 600,
+         color: getColor(i) 
+      }}
+    >
+      {i}
+    </button>
+  ))}
+</div>
 
     <button style={filterBtn} onClick={save}>
       Save
@@ -1247,7 +1305,7 @@ if (chart) setChartData(chart)
       </div>
 
       <div style={{ width: 50 }}>
-        {['😞','😐','🙂','😊','😄'][item.rating - 1]}
+        {item.rating}
       </div>
 
       <div>{item.what_went_well}</div>
