@@ -3,13 +3,22 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/app/lib/supabase'
 
+const DEFAULT_START = '2026-01-01'
+
 const getTodayStr = () => {
   const today = new Date()
   return `${today.getFullYear()}-${
     String(today.getMonth() + 1).padStart(2, '0')
   }-${String(today.getDate()).padStart(2, '0')}`
 }
+const getTomorrowStr = () => {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
 
+  return `${d.getFullYear()}-${
+    String(d.getMonth() + 1).padStart(2, '0')
+  }-${String(d.getDate()).padStart(2, '0')}`
+}
 const headerStyle = (color: string) => ({
   background: color,
   color: 'white',
@@ -726,9 +735,8 @@ const [weekday, setWeekday] = useState(1)
   const [dueDate, setDueDate] = useState('')
   const [status, setStatus] = useState('')
   const [tasks, setTasks] = useState<Task[]>([])
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
-
+ const [startDate, setStartDate] = useState(DEFAULT_START)
+const [endDate, setEndDate] = useState(getTomorrowStr())
   // EDIT STATE
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
