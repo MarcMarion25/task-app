@@ -515,9 +515,7 @@ export default function Home() {
 }, [])
 
 const generateHabitLogs = async () => {
-  const today = getTodayStr()
-  const now = new Date()
-  const weekday = now.getDay()
+  const today = new Date()
 
   const { data: habits } = await supabase
     .from('habits')
@@ -526,44 +524,56 @@ const generateHabitLogs = async () => {
   if (!habits) return
 
   for (const habit of habits) {
-    // check if due today
-    let isDue = false
 
-    if (habit.frequency_type === 'daily') isDue = true
+    if (!habit.start_date) continue
 
-    if (habit.frequency_type === 'weekly') {
-      isDue = habit.weekday === weekday
-    }
+    const startDate = new Date(habit.start_date)
+    let current = new Date(startDate)
 
-    if (habit.frequency_type === 'interval') {
-      const start = new Date(habit.start_date)
-      const diff = Math.floor(
-        (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
-      )
-      isDue = diff % habit.interval_days === 0
-    }
+    while (current <= today) {
+      const dateStr = current.toISOString().split('T')[0]
+      const weekday = current.getDay()
 
-    if (!isDue) continue
+      let isDue = false
 
-    // check if already exists
-    const { data: existing } = await supabase
-      .from('habit_logs')
-      .select('id')
-      .eq('habit_id', habit.id)
-      .eq('log_date', today)
+      if (habit.frequency_type === 'daily') isDue = true
 
-    if (existing && existing.length > 0) continue
-
-    // create log entry
-    await supabase.from('habit_logs').insert([
-      {
-        habit_id: habit.id,
-        log_date: today
+      if (habit.frequency_type === 'weekly') {
+        isDue = habit.weekday === weekday
       }
-    ])
+
+      if (habit.frequency_type === 'interval') {
+        const diff = Math.floor(
+          (current.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+        )
+        isDue = diff >= 0 && diff % habit.interval_days === 0
+      }
+
+      if (!isDue) {
+        current.setDate(current.getDate() + 1)
+        continue
+      }
+
+      // check if already exists
+      const { data: existing } = await supabase
+        .from('habit_logs')
+        .select('id')
+        .eq('habit_id', habit.id)
+        .eq('log_date', dateStr)
+
+      if (!existing || existing.length === 0) {
+        await supabase.from('habit_logs').insert([
+          {
+            habit_id: habit.id,
+            log_date: dateStr
+          }
+        ])
+      }
+
+      current.setDate(current.getDate() + 1)
+    }
   }
 }
-
   return (
     <div style={styles.page}>
       <div style={styles.container}>
@@ -1599,8 +1609,8 @@ useEffect(() => {
   }
 
   const isCompleted = (habitId: string) => {
-    return logs.some((l) => l.habit_id === habitId)
-  }
+  return logs.find((l) => l.habit_id === habitId)?.completed
+}
 
   const dueHabits = habits.filter(isDueToday)
 
@@ -1623,19 +1633,18 @@ const shouldCelebrate =
 }, [allCompleted])
 
   // ACTIONS
-  const toggleHabit = async (habitId: string) => {
-    const exists = logs.find((l) => l.habit_id === habitId)
+ const toggleHabit = async (habitId: string) => {
+  const log = logs.find((l) => l.habit_id === habitId)
 
-    if (exists) {
-      await supabase.from('habit_logs').delete().eq('id', exists.id)
-    } else {
-      await supabase.from('habit_logs').insert([
-        { habit_id: habitId, log_date: currentDate },
-      ])
-    }
+  if (!log) return
 
-    fetchHabits()
-  }
+  await supabase
+    .from('habit_logs')
+    .update({ completed: !log.completed })
+    .eq('id', log.id)
+
+  fetchHabits()
+}
 
 
   const getFrequencyLabel = (habit: any) => {
