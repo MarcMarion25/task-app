@@ -607,7 +607,38 @@ const generateHabitLogs = async () => {
 }
 const isTaskDueToday = (task: any) => {
   const today = new Date()
-  const day = today.getDay()
+  const todayStr = getTodayStr()
+
+  // ✅ DAILY
+  if (task.frequency_type === 'daily') return true
+
+  // ✅ WEEKLY
+  if (task.frequency_type === 'weekly') {
+    return task.weekday === today.getDay()
+  }
+
+  // ✅ MONTHLY (FIXED)
+  if (task.frequency_type === 'monthly') {
+    if (!task.due_date) return false
+    return today.getDate() === new Date(task.due_date).getDate()
+  }
+
+  // ✅ INTERVAL (FIXED)
+  if (task.frequency_type === 'interval') {
+    if (!task.due_date || !task.interval_days) return false
+
+    const start = new Date(task.due_date)
+    const diff = Math.floor(
+      (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+    )
+
+    return diff >= 0 && diff % task.interval_days === 0
+  }
+
+  return false
+}
+const isTaskDueOnDate = (task: any, date: Date) => {
+  const day = date.getDay()
 
   if (task.frequency_type === 'daily') return true
 
@@ -615,23 +646,24 @@ const isTaskDueToday = (task: any) => {
     return task.weekday === day
   }
 
-  if (task.frequency_type === 'interval') {
-    const start = new Date(task.created_at)
-    const diff = Math.floor(
-      (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
-    )
-    return diff % task.interval_days === 0
+  if (task.frequency_type === 'monthly') {
+    return date.getDate() === new Date(task.due_date).getDate()
   }
 
-  if (task.frequency_type === 'monthly') {
-    return today.getDate() === new Date(task.created_at).getDate()
+  if (task.frequency_type === 'interval') {
+    const start = new Date(task.due_date)
+    const diff = Math.floor(
+      (date.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+    )
+    return diff >= 0 && diff % task.interval_days === 0
   }
 
   return false
 }
 
 const generateRecurringTasks = async () => {
-  const today = getTodayStr()
+  const today = new Date()
+  const todayStr = getTodayStr()
 
   const { data: tasks } = await supabase
     .from('tasks')
@@ -641,39 +673,50 @@ const generateRecurringTasks = async () => {
 
   for (const task of tasks) {
 
-    // ❌ skip generated tasks
+    // ❌ skip instances
     if (task.parent_id) continue
 
-    // ❌ skip one-time tasks
-   if (!task.frequency_type || task.frequency_type === 'once') continue
-    // ❌ skip if not due today
-    if (!isTaskDueToday(task)) continue
+    // ❌ skip non-recurring
+    if (!task.frequency_type || task.frequency_type === 'once') continue
 
-    // ✅ check if already created today
-    const { data: existing } = await supabase
-      .from('tasks')
-      .select('id')
-      .eq('parent_id', task.id)
-      .eq('due_date', today)
+    if (!task.due_date) continue
 
-    if (existing && existing.length > 0) continue
+    const startDate = new Date(task.due_date)
 
-    // ✅ create instance
-    await supabase.from('tasks').insert([
-      {
-        title: task.title,
-        due_date: today,
-        status: task.status,
-        completed: false,
-        parent_id: task.id,
-        frequency_type: 'once'
+    // loop from start → today
+    let current = new Date(startDate)
+
+    while (current <= today) {
+      const dateStr = current.toISOString().split('T')[0]
+
+      if (isTaskDueOnDate(task, current)) {
+
+        // check if already exists
+        const { data: existing } = await supabase
+          .from('tasks')
+          .select('id')
+          .eq('parent_id', task.id)
+          .eq('due_date', dateStr)
+
+        if (!existing || existing.length === 0) {
+          await supabase.from('tasks').insert([
+            {
+              title: task.title,
+              due_date: dateStr,
+              status: task.status,
+              completed: false,
+              parent_id: task.id,
+              frequency_type: 'once',
+            }
+          ])
+        }
       }
-    ])
+
+      // move forward 1 day
+      current.setDate(current.getDate() + 1)
+    }
   }
 }
-
-
-
 // TASKS CARD
 function TasksCard() {
   const [frequencyType, setFrequencyType] = useState('once')
