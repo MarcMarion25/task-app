@@ -3,6 +3,67 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/app/lib/supabase'
 
+// 👇 ABOVE all components (same level as getTodayStr)
+const generateHabitLogs = async () => {
+  const today = new Date()
+
+  const { data: habits } = await supabase
+    .from('habits')
+    .select('*')
+
+  if (!habits) return
+
+  for (const habit of habits) {
+    if (!habit.start_date) continue
+
+    const startDate = new Date(habit.start_date)
+    let current = new Date(startDate)
+
+    while (current <= today) {
+      const dateStr = current.toISOString().split('T')[0]
+      const weekday = current.getDay()
+
+      let isDue = false
+
+      if (habit.frequency_type === 'daily') isDue = true
+
+      if (habit.frequency_type === 'weekly') {
+        isDue = habit.weekday === weekday
+      }
+
+      if (habit.frequency_type === 'interval') {
+        const diff = Math.floor(
+          (current.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+        )
+        isDue = diff >= 0 && diff % habit.interval_days === 0
+      }
+
+      if (!isDue) {
+        current.setDate(current.getDate() + 1)
+        continue
+      }
+
+      const { data: existing } = await supabase
+        .from('habit_logs')
+        .select('id')
+        .eq('habit_id', habit.id)
+        .eq('log_date', dateStr)
+
+      if (!existing || existing.length === 0) {
+        await supabase.from('habit_logs').insert([
+          {
+            habit_id: habit.id,
+            log_date: dateStr,
+            completed: false
+          }
+        ])
+      }
+
+      current.setDate(current.getDate() + 1)
+    }
+  }
+}
+
 const DEFAULT_START = '2026-01-01'
 
 const getTodayStr = () => {
@@ -681,6 +742,7 @@ const isTaskDueOnDate = (task: any, date: Date) => {
 }
 
 const generateRecurringTasks = async () => {
+  console.log('RUNNING TASK GENERATOR')
   const today = new Date()
   const todayStr = getTodayStr()
 
@@ -690,51 +752,66 @@ const generateRecurringTasks = async () => {
 
   if (!tasks) return
 
-  for (const task of tasks) {
+for (const task of tasks) {
 
-    // ❌ skip instances
-    if (task.parent_id) continue
+  const today = getTodayStr()
 
-    // ❌ skip non-recurring
-    if (!task.frequency_type || task.frequency_type === 'once') continue
+  // ✅ ONLY templates
+  if (task.parent_id) continue
+  
+  // ✅ ONLY recurring
+  if (!task.frequency_type || task.frequency_type === 'once') continue
 
-    if (!task.due_date) continue
+  // ✅ Check if due today
+  let isDue = false
 
-    const startDate = new Date(task.due_date)
-
-    // loop from start → today
-    let current = new Date(startDate)
-
-    while (current <= today) {
-      const dateStr = current.toISOString().split('T')[0]
-
-      if (isTaskDueOnDate(task, current)) {
-
-        // check if already exists
-        const { data: existing } = await supabase
-          .from('tasks')
-          .select('id')
-          .eq('parent_id', task.id)
-          .eq('due_date', dateStr)
-
-        if (!existing || existing.length === 0) {
-          await supabase.from('tasks').insert([
-            {
-              title: task.title,
-              due_date: dateStr,
-              status: task.status,
-              completed: false,
-              parent_id: task.id,
-              frequency_type: 'once',
-            }
-          ])
-        }
-      }
-
-      // move forward 1 day
-      current.setDate(current.getDate() + 1)
-    }
+  if (task.frequency_type === 'daily') {
+    
+    isDue = true
   }
+
+  if (task.frequency_type === 'weekly') {
+    const todayDay = new Date().getDay()
+    const taskDay = new Date(task.due_date).getDay()
+    isDue = todayDay === taskDay
+  }
+
+  if (task.frequency_type === 'monthly') {
+  const todayDate = new Date().getDate()
+  const taskDate = new Date(task.due_date).getDate()
+
+  isDue = todayDate === taskDate
+}
+
+  if (!isDue) continue
+console.log('pass due check:', today)
+  // ✅ Check if already exists for today
+  const { data: existing } = await supabase
+    .from('tasks')
+    .select('id')
+    .eq('parent_id', task.id)
+    .eq('due_date', today)
+
+  if (existing && existing.length > 0) continue
+
+  // ✅ Create today's instance
+  console.log('ABOUT TO CREATE:', task.title)
+  await supabase.from('tasks').insert([
+    {
+      title: task.title,
+      due_date: today,
+      status: task.status,
+      completed: false,
+      parent_id: task.id,      // 🔑 link to template
+      frequency_type: 'once'   // instance is NOT recurring
+    }
+    
+  ])
+
+  console.log('CREATED:', task.title)
+
+  }
+  
 }
 // TASKS CARD
 function TasksCard() {
@@ -769,8 +846,13 @@ const [endDate, setEndDate] = useState(getTomorrowStr())
   }
 
   useEffect(() => {
-    fetchTasks()
-  }, [])
+  const run = async () => {
+    await generateRecurringTasks()  // ✅ create today's tasks
+    fetchTasks()                    // ✅ then load them into UI
+  }
+
+  run()
+}, [])
 
   // ADD
   const addTask = async () => {
@@ -1013,9 +1095,7 @@ const toggleComplete = async (task: Task) => {
 function NotesCard() {
   const [notes, setNotes] = useState<any[]>([])
   const [tag, setTag] = useState('')
-  const [noteDate, setNoteDate] = useState(
-    getTodayStr()
-  )
+  const [noteDate, setNoteDate] = useState( getTodayStr()  )
   const [note, setNote] = useState('')
 
   const fetchNote = async (date: string) => {
@@ -1133,7 +1213,7 @@ function IntentionsCard() {
      .eq('date', date)
       .maybeSingle()
 
-    if (today) setText(today.text)
+    if (today) setText(today.intention)
     else setText('')
 
     // last 5 days
@@ -1239,7 +1319,7 @@ function DayRatingCard() {
     getTodayStr()
   )
   const [text, setText] = useState('')
-  const [rating, setRating] = useState<number | null>(null)
+  const [rating, setRating] = useState(0)
   const getColor = (r: number) => {
   if (r <= 3) return '#ef4444'   // red
   if (r <= 6) return '#f59e0b'   // orange
@@ -1255,14 +1335,14 @@ function DayRatingCard() {
     .from('day_ratings')
     .select('*')
     .eq('rating_date', date)
-    .single()
+    .maybeSingle()
 
   if (data) {
     setText(data.what_went_well || '')
-    setRating(data.rating)
+    setRating(data.rating ?? 0)
   } else {
     setText('')
-    setRating(null)
+    setRating(0)
   }
 
   // last 5 days
@@ -1507,8 +1587,7 @@ function QuoteCard() {
 
 
 // STYLES
-const styles = {
-  page: {
+const styles = {  page: {
     background: '#e5e7eb',
     minHeight: '100vh',
     display: 'flex',
@@ -1535,6 +1614,11 @@ cards: {
 }
 
 function HabitsCard() {
+  
+  useEffect(() => {
+  generateHabitLogs()
+  fetchHabits()
+}, [])
   const todayStr = getTodayStr()
   const displayDate = new Date(todayStr).toLocaleDateString('en-US', {
   month: 'short',
@@ -1562,7 +1646,7 @@ function HabitsCard() {
     const { data: logData } = await supabase
       .from('habit_logs')
       .select('*')
-      .eq('log_date', currentDate)
+     .eq('log_date', getTodayStr())
 
     if (logData) setLogs(logData)
   }
@@ -1608,8 +1692,12 @@ useEffect(() => {
     return false
   }
 
-  const isCompleted = (habitId: string) => {
-  return logs.find((l) => l.habit_id === habitId)?.completed
+const isCompleted = (habitId: string) => {
+  return logs.find(
+    (l) =>
+      l.habit_id === habitId &&
+      l.log_date === getTodayStr()
+  )?.completed ?? false
 }
 
   const dueHabits = habits.filter(isDueToday)
@@ -1634,14 +1722,43 @@ const shouldCelebrate =
 
   // ACTIONS
  const toggleHabit = async (habitId: string) => {
-  const log = logs.find((l) => l.habit_id === habitId)
+  const today = getTodayStr()
 
-  if (!log) return
+  // 🔍 get the correct log directly from DB
+  const { data: log, error: fetchError } = await supabase
+  .from('habit_logs')
+  .select('*')
+  .eq('habit_id', habitId)
+  .eq('log_date', today)
+  .maybeSingle()
 
-  await supabase
+  console.log('FOUND LOG:', log, fetchError)
+
+  if (!log) {
+  console.log('Creating missing log...')
+
+  const { data: newLog } = await supabase
+    .from('habit_logs')
+    .insert([
+      {
+        habit_id: habitId,
+        log_date: today,
+        completed: true // since user just checked it
+      }
+    ])
+    .select()
+    .single()
+
+  fetchHabits()
+  return
+}
+  // 🔄 update completion
+  const { error: updateError } = await supabase
     .from('habit_logs')
     .update({ completed: !log.completed })
     .eq('id', log.id)
+
+  console.log('UPDATE ERROR:', updateError)
 
   fetchHabits()
 }
@@ -1811,7 +1928,7 @@ const shouldCelebrate =
               <input
                 type="checkbox"
                  style={{ transform: 'scale(2)', cursor: 'pointer' }}
-                checked={isCompleted(habit.id)}
+                checked={!!isCompleted(habit.id)}
                 onChange={() => toggleHabit(habit.id)}
               />
 
