@@ -1486,7 +1486,7 @@ const format = (d: Date) => {
 
 
 
-  const [startDate, setStartDate] = useState(format(twoDaysAgo))
+  const [startDate, setStartDate] = useState(format(today))
   const [endDate, setEndDate] = useState(format(today))
   const [tasks, setTasks] = useState<any[]>([])
 
