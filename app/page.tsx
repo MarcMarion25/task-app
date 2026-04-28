@@ -571,9 +571,7 @@ type Task = {
 export default function Home() {
 
 
-  useEffect(() => {
-  generateRecurringTasks()
-}, [])
+ 
 
 const generateHabitLogs = async () => {
   const today = new Date()
@@ -847,8 +845,24 @@ const [endDate, setEndDate] = useState(getTomorrowStr())
 
   useEffect(() => {
   const run = async () => {
-    await generateRecurringTasks()  // ✅ create today's tasks
-    fetchTasks()                    // ✅ then load them into UI
+    const today = getTodayStr()
+
+    const lastRun = localStorage.getItem('tasks_generated_date')
+
+    if (lastRun === today) {
+      // already ran today → just fetch
+      fetchTasks()
+      return
+    }
+
+    // run generator
+    await generateRecurringTasks()
+
+    // save that we ran today
+    localStorage.setItem('tasks_generated_date', today)
+
+    // refresh UI
+    fetchTasks()
   }
 
   run()
