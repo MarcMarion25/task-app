@@ -1568,6 +1568,7 @@ function QuoteCard() {
   const [quote, setQuote] = useState('')
 
   useEffect(() => {
+  const updateQuote = () => {
     const today = new Date()
 
     const dayNumber = Math.floor(
@@ -1575,10 +1576,23 @@ function QuoteCard() {
     )
 
     const index = dayNumber % quotes.length
-
     setQuote(quotes[index])
-  }, [])
+  }
 
+  updateQuote()
+
+  const now = new Date()
+  const msUntilMidnight =
+    new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1
+    ).getTime() - now.getTime()
+
+  const timeout = setTimeout(updateQuote, msUntilMidnight)
+
+  return () => clearTimeout(timeout)
+}, [])
   return (
     <div style={card}>
       <div style={headerStyle('#6366f1')}>
