@@ -782,12 +782,15 @@ for (const task of tasks) {
 }
 
 if (task.frequency_type === 'interval') {
-  const todayDate = new Date(today)
-  const start = new Date(task.start_date)
+const toDateOnly = (d: Date) =>
+  new Date(d.getFullYear(), d.getMonth(), d.getDate())
 
-  const diff = Math.floor(
-    (todayDate.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
-  )
+const todayDate = toDateOnly(new Date())
+const start = toDateOnly(new Date(task.start_date))
+
+const diff = Math.floor(
+  (todayDate.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+)
 
   isDue = diff % task.interval_days === 0
 }
