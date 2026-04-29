@@ -781,6 +781,17 @@ for (const task of tasks) {
   isDue = todayDate === taskDate
 }
 
+if (task.frequency_type === 'interval') {
+  const todayDate = new Date(today)
+  const start = new Date(task.start_date)
+
+  const diff = Math.floor(
+    (todayDate.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+  )
+
+  isDue = diff % task.interval_days === 0
+}
+
   if (!isDue) continue
 console.log('pass due check:', today)
   // ✅ Check if already exists for today
