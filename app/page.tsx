@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/app/lib/supabase'
 
 // 👇 ABOVE all components (same level as getTodayStr)
+
+
 const generateHabitLogs = async () => {
   const today = new Date()
 
@@ -1630,11 +1632,14 @@ function QuoteCard() {
 
 // STYLES
 const styles = {  page: {
+
     background: '#e5e7eb',
     minHeight: '100vh',
     display: 'flex',
     justifyContent: 'center',
     paddingTop: 40,
+
+  color: '#d01880'  // 👈 ADD THIS
   },
 
 container: {
@@ -1643,6 +1648,8 @@ container: {
   width: '100%',
   maxWidth: 1100,      // ~2/3 feel but responsive
   margin: '0 auto',
+
+  color: '#c21313'  // 👈 ADD THIS
 },
   title: {
     textAlign: 'center' as const,
