@@ -573,68 +573,7 @@ type Task = {
 export default function Home() {
 
 
- 
 
-const generateHabitLogs = async () => {
-  const today = new Date()
-
-  const { data: habits } = await supabase
-    .from('habits')
-    .select('*')
-
-  if (!habits) return
-
-  for (const habit of habits) {
-
-    if (!habit.start_date) continue
-
-    const startDate = new Date(habit.due_date)
-    let current = new Date(startDate)
-
-    while (current <= today) {
-      const dateStr = current.toISOString().split('T')[0]
-      const weekday = current.getDay()
-
-      let isDue = false
-
-      if (habit.frequency_type === 'daily') isDue = true
-
-      if (habit.frequency_type === 'weekly') {
-        isDue = habit.weekday === weekday
-      }
-
-      if (habit.frequency_type === 'interval') {
-        const diff = Math.floor(
-          (current.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-        )
-        isDue = diff >= 0 && diff % habit.interval_days === 0
-      }
-
-      if (!isDue) {
-        current.setDate(current.getDate() + 1)
-        continue
-      }
-
-      // check if already exists
-      const { data: existing } = await supabase
-        .from('habit_logs')
-        .select('id')
-        .eq('habit_id', habit.id)
-        .eq('log_date', dateStr)
-
-      if (!existing || existing.length === 0) {
-        await supabase.from('habit_logs').insert([
-          {
-            habit_id: habit.id,
-            log_date: dateStr
-          }
-        ])
-      }
-
-      current.setDate(current.getDate() + 1)
-    }
-  }
-}
   return (
     <div style={styles.page}>
       <div style={styles.container}>
