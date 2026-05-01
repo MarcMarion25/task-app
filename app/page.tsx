@@ -1008,7 +1008,7 @@ const toggleComplete = async (task: Task) => {
 
       {/* LIST */}
       <div style={{ marginTop: 10 }}>
-        {tasks.map((task) => (
+        {tasks?.map((task) => (
           <div key={task.id} style={taskRow}>
             <input
               type="checkbox"
@@ -1148,7 +1148,7 @@ const saveNote = async () => {
       onChange={(e) => setNote(e.target.value)}
       placeholder="Write your notes..."
     />
-    {notes.map((n) => (
+    {notes?.map((n) => (
   <div key={n.id} style={{ marginTop: 10 }}>
     <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
   <div>{n.note}</div>
@@ -1270,7 +1270,7 @@ function IntentionsCard() {
     <div style={{ marginTop: 20 }}>
       <h4>Last 5 Days</h4>
 
-      {recent.map((item) => (
+      {recent?.map((item) => (
         <div key={item.id} style={taskRow}>
           <div style={{ width: 100 }}>
             {item.date}
@@ -1386,7 +1386,7 @@ if (chart) setChartData(chart)
 
     {/* RATING */}
  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
-  {[...Array(11)].map((_, i) => (
+  {[...Array(11)]?.map((_, i) => (
     <button
       key={i}
       onClick={() => setRating(i)}
@@ -1412,7 +1412,7 @@ if (chart) setChartData(chart)
     <div style={{ marginTop: 20 }}>
   <h4>Last 5 Days</h4>
 
-  {recent.map((item) => (
+  {recent?.map((item) => (
     <div key={item.id} style={taskRow}>
       <div style={{ width: 100 }}>
         {item.rating_date}
@@ -1502,7 +1502,7 @@ const format = (d: Date) => {
       <div style={{ marginTop: 10 }}>
         {tasks.length === 0 && <div>No completed tasks</div>}
 
-        {tasks.map((task) => (
+        {tasks?.map((task) => (
           <div key={task.id} style={taskRow}>
             <span style={{ flex: 2 }}>
               <strong>{task.title}</strong>
@@ -1915,7 +1915,7 @@ const shouldCelebrate =
     marginTop: 8
   }}
 >
-  {sortedHabits.map((habit) => (
+  {sortedHabits?.map((habit) => (
     <div key={habit.id} style={taskRow}>
               <input
                 type="checkbox"
@@ -2111,11 +2111,13 @@ function NotesSearchCard() {
         <div style={{ marginTop: 15 }}>
           {results.length === 0 && <div>No results</div>}
 
-          {results.map((n) => (
+          {results?.map((n) => (
             <div key={n.id} style={taskRow}>
               
               <div style={{ width: 90 }}>
-                {n.date}
+               
+    {n?.date ? new Date(n.date).toLocaleDateString() : ''}
+
               </div>
 
               <div style={{ flex: 1, display: 'flex', gap: 8 }}>
