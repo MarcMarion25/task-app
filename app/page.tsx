@@ -588,7 +588,7 @@ const generateHabitLogs = async () => {
 
     if (!habit.start_date) continue
 
-    const startDate = new Date(habit.start_date)
+    const startDate = new Date(habit.due_date)
     let current = new Date(startDate)
 
     while (current <= today) {
@@ -743,6 +743,7 @@ const isTaskDueOnDate = (task: any, date: Date) => {
 
 const generateRecurringTasks = async () => {
   console.log('RUNNING TASK GENERATOR')
+
   const today = new Date()
   const todayStr = getTodayStr()
 
@@ -754,6 +755,7 @@ const generateRecurringTasks = async () => {
 
 for (const task of tasks) {
 
+  
   const today = getTodayStr()
 
   // ✅ ONLY templates
@@ -788,15 +790,17 @@ const toDateOnly = (d: Date) =>
   new Date(d.getFullYear(), d.getMonth(), d.getDate())
 
 const todayDate = toDateOnly(new Date())
-const start = toDateOnly(new Date(task.start_date))
+const start = toDateOnly(new Date(task.due_date))
 
 const diff = Math.floor(
   (todayDate.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
 )
 
   isDue = diff % task.interval_days === 0
+  isDue = 1===1
+ console.log('START DATE RAW:', task.start_date)
 }
-
+console.log('FINAL DUE CHECK:', task.title, isDue)
   if (!isDue) continue
 console.log('pass due check:', today)
   // ✅ Check if already exists for today
@@ -865,11 +869,11 @@ const [endDate, setEndDate] = useState(getTomorrowStr())
 
     const lastRun = localStorage.getItem('tasks_generated_date')
 
-    if (lastRun === today) {
+   // if (lastRun === today) {
       // already ran today → just fetch
-      fetchTasks()
-      return
-    }
+  //    fetchTasks()
+   //   return
+  //  }
 
     // run generator
     await generateRecurringTasks()
