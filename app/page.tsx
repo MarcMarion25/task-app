@@ -1566,7 +1566,7 @@ function QuoteCard() {
   lineHeight: 1.5,
   textAlign: 'center'
 }}>
-        {quote}
+       {quote || ''}
       </div>
     </div>
   )
@@ -2115,7 +2115,7 @@ function NotesSearchCard() {
             <div key={n.id} style={taskRow}>
               
               <div style={{ width: 90 }}>
-                {n.note_date}
+                {n.date}
               </div>
 
               <div style={{ flex: 1, display: 'flex', gap: 8 }}>
