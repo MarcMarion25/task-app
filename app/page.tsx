@@ -795,10 +795,10 @@ const start = toDateOnly(new Date(task.due_date))
 const diff = Math.floor(
   (todayDate.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
 )
-
+   if (diff < 0) continue   // 🚨 CRITICAL FIX
   isDue = diff % task.interval_days === 0
-  isDue = 1===1
- console.log('START DATE RAW:', task.start_date)
+ 
+ console.log('START DATE RAW:', task.due_date)
 }
 console.log('FINAL DUE CHECK:', task.title, isDue)
   if (!isDue) continue
