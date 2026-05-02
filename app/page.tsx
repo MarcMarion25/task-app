@@ -1340,15 +1340,17 @@ if (chart) setChartData(chart)
   }, [date])
 
   const save = async () => {
-    await supabase.from('day_ratings').upsert(
-      {
-        rating_date: date,
-        what_went_well: text,
-        rating,
-      },
-      { onConflict: 'rating_date' }
-    )
-  }
+  await supabase.from('day_ratings').upsert(
+    {
+      rating_date: date,
+      what_went_well: text,
+      rating,
+    },
+    { onConflict: 'rating_date' }
+  )
+
+  await fetchRating()   // 👈 THIS is the fix
+}
 
   return (
   <div style={card}>
