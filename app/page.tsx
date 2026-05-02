@@ -1962,6 +1962,31 @@ const shouldCelebrate =
         <span style={{ fontSize: 11, color: '#6b7280' }}>
           {getFrequencyLabel(habit)}
         </span>
+
+        <button
+  onClick={() => {
+  if (confirm('Delete this habit?')) {
+    deleteHabit(habit.id)
+  }
+}}
+    style={{
+    marginLeft: 6,
+    width: 18,
+    height: 18,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: '#000000',      // red
+    color: 'white',             // white X
+    border: 'none',
+    borderRadius: 4,            // small square rounding
+    cursor: 'pointer',
+    fontSize: 12,
+    lineHeight: 1,
+  }}
+>
+  ×
+</button>
       </div>
     )
   })}
