@@ -1907,55 +1907,75 @@ const shouldCelebrate =
          
         </div>
 
+
+
+
+
+
+
+
         {/* 📋 HABIT LIST */}
-     <div
+   <div
   style={{
-    maxHeight: 220,   // ~5 rows (adjust if needed)
-    overflowY: 'auto',
-    marginTop: 8
+    marginTop: 8,
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 10,
   }}
 >
-  {sortedHabits?.map((habit) => (
-    <div key={habit.id} style={taskRow}>
-              <input
-                type="checkbox"
-                 style={{ transform: 'scale(2)', cursor: 'pointer' }}
-                checked={!!isCompleted(habit.id)}
-                onChange={() => toggleHabit(habit.id)}
-              />
+  {sortedHabits?.map((habit) => {
+    const done = isCompleted(habit.id)
 
-                      <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-                      <span
-                        style={{
-                          textDecoration: isCompleted(habit.id)
-                            ? 'line-through'
-                            : 'none',
-                          opacity: isCompleted(habit.id) ? 0.6 : 1
-                        }}
-                      >
-                        {habit.name}
-                      </span>
+    return (
+      <div
+        key={habit.id}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '6px 10px',
+          borderRadius: 9,
+          background: done ? '#dcfce7' : '#f3f4f6',
+          border: '1px solid #e5e7eb',
 
-                      <span
-                        style={{
-                          fontSize: 12,
-                          color: '#6b7280',
-                          marginLeft: 8
-                        }}
-                      >
-                        ({getFrequencyLabel(habit)})
-                      </span>
-                    </div>
-              <button
-                style={deleteBtn}
-                onClick={() => deleteHabit(habit.id)}
-              >
-                ×
+          // 🔥 THESE ARE THE IMPORTANT ONES
+          width: 'auto',
+          flex: '0 0 auto',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={done}
+          onChange={() => toggleHabit(habit.id)}
+          style={{ transform: 'scale(1.2)' }}
+        />
 
-              </button>
-            </div>
-          ))}
-        </div>
+        <span
+          style={{
+            textDecoration: done ? 'line-through' : 'none',
+          }}
+        >
+          {habit?.name || ''}
+        </span>
+
+        <span style={{ fontSize: 11, color: '#6b7280' }}>
+          {getFrequencyLabel(habit)}
+        </span>
+      </div>
+    )
+  })}
+</div>
+
+
+
+
+
+
+
+
+
+
 
       </div>
     </div>
