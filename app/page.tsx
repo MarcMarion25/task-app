@@ -1614,7 +1614,9 @@ function HabitsCard() {
   fetchHabits()
 }, [])
   const todayStr = getTodayStr()
-  const displayDate = new Date(todayStr).toLocaleDateString('en-US', {
+const [y, m, d] = todayStr.split('-').map(Number)
+
+const displayDate = new Date(y, m - 1, d).toLocaleDateString('en-US', {
   month: 'short',
   day: 'numeric',
 })
