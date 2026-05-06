@@ -609,6 +609,9 @@ export default function Home() {
    
     <CompletedTasksCard />
   </div>
+  <div style={{ ...twoThirds, marginBottom: 20 }}>
+      <ProjectsCard />
+</div>
 
 <div style={{ ...twoThirds, marginBottom: 20 }}>
 <HabitsCard />
@@ -1167,6 +1170,145 @@ const saveNote = async () => {
     </button>
   </div>
 </div>
+  )
+}
+function ProjectsCard() {
+  const [projects, setProjects] = useState<any[]>([])
+
+  const [name, setName] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const [nextStep, setNextStep] = useState('')
+  const [percent, setPercent] = useState(0)
+  const [atBat, setAtBat] = useState('')
+
+  const fetchProjects = async () => {
+    const { data } = await supabase
+      .from('projects')
+      .select('*')
+      .order('due_date')
+
+    if (data) setProjects(data)
+  }
+
+  useEffect(() => {
+    fetchProjects()
+  }, [])
+
+  const addProject = async () => {
+    if (!name) return
+
+    await supabase.from('projects').insert([
+      {
+        name,
+        due_date: dueDate || null,
+        next_step: nextStep,
+        percent_done: percent,
+        at_bat: atBat,
+      },
+    ])
+
+    setName('')
+    setDueDate('')
+    setNextStep('')
+    setPercent(0)
+    setAtBat('')
+
+    fetchProjects()
+  }
+
+  return (
+    <div style={card}>
+      <div style={headerStyle('#0ea5e9')}>Projects</div>
+
+      <div style={{ padding: 12 }}>
+        {/* ADD */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <input
+            style={input}
+            placeholder="Project name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+
+          <input
+            style={smallInput}
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+          />
+
+          <input
+            style={input}
+            placeholder="Next step"
+            value={nextStep}
+            onChange={(e) => setNextStep(e.target.value)}
+          />
+
+          <input
+            style={smallInput}
+            type="number"
+            min={0}
+            max={100}
+            value={percent}
+            onChange={(e) => setPercent(Number(e.target.value))}
+            placeholder="% done"
+          />
+
+          <input
+            style={smallInput}
+            placeholder="Who’s at bat"
+            value={atBat}
+            onChange={(e) => setAtBat(e.target.value)}
+          />
+
+          <button style={addBtn} onClick={addProject}>
+            Add Project
+          </button>
+        </div>
+
+        {/* LIST */}
+   <div style={{ marginTop: 12 }}>
+  {projects?.map((p) => (
+    <div
+      key={p.id}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '6px 8px',
+        borderBottom: '1px solid #e5e7eb',
+        fontSize: 14,
+      }}
+    >
+      {/* NAME */}
+      <div style={{ flex: 2, fontWeight: 500 }}>
+        {p.name}
+      </div>
+
+      {/* DUE DATE */}
+      <div style={{ width: 90, color: '#6b7280' }}>
+        {p.due_date || '-'}
+      </div>
+
+      {/* NEXT STEP */}
+      <div style={{ flex: 3 }}>
+        {p.next_step || '-'}
+      </div>
+
+      {/* % DONE */}
+      <div style={{ width: 70, textAlign: 'right' }}>
+        {p.percent_done || 0}%
+      </div>
+
+      {/* AT BAT */}
+      <div style={{ width: 100, color: '#6b7280' }}>
+        {p.at_bat || '-'}
+      </div>
+    </div>
+  ))}
+</div>
+      </div>
+    </div>
   )
 }
 
@@ -2079,6 +2221,8 @@ useEffect(() => {
     </div>
   )
 }
+
+
 
 function NotesSearchCard() {
   const [date, setDate] = useState('')
