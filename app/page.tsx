@@ -1267,7 +1267,7 @@ function ProjectsCard() {
         </div>
 
         {/* LIST */}
-   <div style={{ marginTop: 12 }}>
+  <div style={{ marginTop: 12 }}>
   {projects?.map((p) => (
     <div
       key={p.id}
@@ -1295,9 +1295,42 @@ function ProjectsCard() {
         {p.next_step || '-'}
       </div>
 
-      {/* % DONE */}
-      <div style={{ width: 70, textAlign: 'right' }}>
-        {p.percent_done || 0}%
+      {/* % DONE (EDITABLE) */}
+      <div style={{ width: 80, display: 'flex', alignItems: 'center', gap: 2 }}>
+        <input
+          type="number"
+          min={0}
+          max={100}
+          value={p.percent_done || 0}
+          onChange={(e) => {
+            const newVal = Number(e.target.value)
+
+            // instant UI update
+            setProjects((prev) =>
+              prev.map((proj) =>
+                proj.id === p.id
+                  ? { ...proj, percent_done: newVal }
+                  : proj
+              )
+            )
+          }}
+          onBlur={async (e) => {
+            const newVal = Number(e.target.value)
+
+            await supabase
+              .from('projects')
+              .update({ percent_done: newVal })
+              .eq('id', p.id)
+          }}
+          style={{
+            width: 50,
+            textAlign: 'right',
+            border: '1px solid #e5e7eb',
+            borderRadius: 4,
+            padding: '2px 4px',
+          }}
+        />
+        <span>%</span>
       </div>
 
       {/* AT BAT */}
