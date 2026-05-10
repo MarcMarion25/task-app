@@ -567,6 +567,7 @@ type Task = {
   status: string | null
   completed: boolean
   comp_date: string | null
+   priority?: string | null  
 }
 
 // MAIN PAGE
@@ -775,6 +776,8 @@ console.log('pass due check:', today)
 }
 // TASKS CARD
 function TasksCard() {
+  const [priority, setPriority] = useState('')
+const [editPriority, setEditPriority] = useState('')
   const [frequencyType, setFrequencyType] = useState('once')
 const [intervalDays, setIntervalDays] = useState(3)
 const [weekday, setWeekday] = useState(1)
@@ -804,7 +807,6 @@ const [endDate, setEndDate] = useState(getTomorrowStr())
     const { data } = await query
     if (data) setTasks(data)
   }
-
   useEffect(() => {
   const run = async () => {
     const today = getTodayStr()
@@ -834,7 +836,7 @@ const [endDate, setEndDate] = useState(getTomorrowStr())
   const addTask = async () => {
     if (!title) return
 
-   await supabase.from('tasks').insert([
+  await supabase.from('tasks').insert([
   {
     title,
     due_date: dueDate || null,
@@ -842,6 +844,7 @@ const [endDate, setEndDate] = useState(getTomorrowStr())
     frequency_type: frequencyType,
     interval_days: frequencyType === 'interval' ? intervalDays : null,
     weekday: frequencyType === 'weekly' ? weekday : null,
+    priority,   // 👈 added
   }
 ])
 
@@ -905,6 +908,7 @@ const toggleComplete = async (task: Task) => {
     setEditTitle(task.title)
     setEditStatus(task.status || '')
     setEditDueDate(task.due_date || '')
+    setEditPriority(task.priority || '')
   }
 
   const saveEdit = async (id: string) => {
@@ -914,6 +918,10 @@ const toggleComplete = async (task: Task) => {
         title: editTitle,
         status: editStatus,
         due_date: editDueDate || null,
+
+    priority: editPriority,   // 👈 ADD THIS
+
+
       })
       .eq('id', id)
 
@@ -950,6 +958,16 @@ const toggleComplete = async (task: Task) => {
           value={status}
           onChange={(e) => setStatus(e.target.value)}
         />
+        <select
+  value={priority}
+  onChange={(e) => setPriority(e.target.value)}
+  style={smallInput}
+>
+  <option value="">Priority</option>
+  <option value="high">High</option>
+  <option value="medium">Medium</option>
+  <option value="low">Low</option>
+</select>
         <select
   value={frequencyType}
   onChange={(e) => setFrequencyType(e.target.value)}
@@ -1020,6 +1038,12 @@ const toggleComplete = async (task: Task) => {
               onChange={() => toggleComplete(task)}
             />
 
+
+
+
+
+            
+
             {editingId === task.id ? (
               <>
                 <input
@@ -1038,6 +1062,15 @@ const toggleComplete = async (task: Task) => {
                   value={editStatus}
                   onChange={(e) => setEditStatus(e.target.value)}
                 />
+                <select
+  value={editPriority}
+  onChange={(e) => setEditPriority(e.target.value)}
+  style={smallInput}
+>
+  <option value="high">High</option>
+  <option value="medium">Medium</option>
+  <option value="low">Low</option>
+</select>
                 <button style={filterBtn} onClick={() => saveEdit(task.id)}>
                   Save
                 </button>
@@ -1048,15 +1081,50 @@ const toggleComplete = async (task: Task) => {
   <strong>#{task.id}</strong>
   <strong>{task.title}</strong>
 </span>
+<span
+  style={{
+    width: 70,
+    fontWeight: 500,
+    color:
+      task.priority === 'high'
+        ? '#dc2626'
+        : task.priority === 'medium'
+        ? '#d97706'
+        : task.priority === 'low'
+        ? '#16a34a'
+        : '#6b7280',
+  }}
+>
+  {task.priority || '-'}
+</span>
                 <span style={{ flex: 1 }}>{task.due_date || '-'}</span>
                 <span style={{ flex: 1 }}>{task.status || '-'}</span>
 
 
                 
 
-                <button style={editBtn} onClick={() => startEdit(task)}>
-                  Edit
-                </button>
+               <button
+  onClick={() => startEdit(task)}
+  style={{
+    padding: '4px 8px',
+    borderRadius: 4,
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: 12,
+    color: 'white',
+
+    background:
+      task?.priority === 'high'
+        ? '#dc2626'   // red
+        : task?.priority === 'medium'
+        ? '#f59e0b'   // yellow
+        : task?.priority === 'low'
+        ? '#16a34a'   // green
+        : '#6b7280',  // gray (none)
+  }}
+>
+  Edit
+</button>
               </>
             )}
           </div>
@@ -1610,6 +1678,7 @@ if (chart) setChartData(chart)
 
 function CompletedTasksCard() {
  const today = new Date()
+ 
 
 const twoDaysAgo = new Date()
 twoDaysAgo.setDate(today.getDate() - 2)
