@@ -939,7 +939,14 @@ const toggleComplete = async (task: Task) => {
     
       {/* ADD */}
       <div style={{ padding: '12px 16px' }}>
-      <div style={row}>
+     <div
+  style={{
+    display: 'flex',
+    flexWrap: 'wrap',   // 🔥 allows wrapping ONLY when needed
+    gap: 6,
+    alignItems: 'center',
+  }}
+>
         <input
           style={input}
           placeholder="Task title"
