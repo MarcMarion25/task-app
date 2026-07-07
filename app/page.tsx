@@ -1358,7 +1358,7 @@ const [showCompleted, setShowCompleted] = useState(true)
   <div style={{ marginTop: 12 }}>
  {projects
   ?.filter((p) => showCompleted || !p.completed)
-  .map((p) => (    >
+  .map((p) => (    
       {/* NAME */}
       <div style={{ flex: 2, fontWeight: 500 }}>
         {p.name}
