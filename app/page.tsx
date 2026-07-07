@@ -1249,7 +1249,7 @@ const saveNote = async () => {
 }
 function ProjectsCard() {
   const [projects, setProjects] = useState<any[]>([])
-
+const [showCompleted, setShowCompleted] = useState(true)
   const [name, setName] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [nextStep, setNextStep] = useState('')
@@ -1340,21 +1340,25 @@ function ProjectsCard() {
             Add Project
           </button>
         </div>
-
+<button
+  onClick={() => setShowCompleted((prev) => !prev)}
+  style={{
+    marginBottom: 8,
+    padding: '4px 8px',
+    borderRadius: 4,
+    border: '1px solid #e5e7eb',
+    background: 'white',
+    cursor: 'pointer',
+    fontSize: 12,
+  }}
+>
+  {showCompleted ? 'Hide Completed' : 'Show Completed'}
+</button>
         {/* LIST */}
   <div style={{ marginTop: 12 }}>
-  {projects?.map((p) => (
-    <div
-      key={p.id}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        padding: '6px 8px',
-        borderBottom: '1px solid #e5e7eb',
-        fontSize: 14,
-      }}
-    >
+ {projects
+  ?.filter((p) => showCompleted || !p.completed)
+  .map((p) => (    >
       {/* NAME */}
       <div style={{ flex: 2, fontWeight: 500 }}>
         {p.name}
