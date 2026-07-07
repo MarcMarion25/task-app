@@ -1354,72 +1354,50 @@ const [showCompleted, setShowCompleted] = useState(true)
 >
   {showCompleted ? 'Hide Completed' : 'Show Completed'}
 </button>
-        {/* LIST */}
-  <div style={{ marginTop: 12 }}>
- {projects
-  ?.filter((p) => showCompleted || !p.completed)
-  .map((p) => (    
-      {/* NAME */}
-      <div style={{ flex: 2, fontWeight: 500 }}>
-        {p.name}
-      </div>
+   {/* LIST */}
+<div style={{ marginTop: 12 }}>
+  {projects
+    ?.filter((p) => showCompleted || !p.completed)
+    .map((p) => (
+      <div
+        key={p.id}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '6px 8px',
+          borderBottom: '1px solid #e5e7eb',
+          fontSize: 14,
+          opacity: p.completed ? 0.5 : 1,
+        }}
+      >
+        {/* NAME */}
+        <div style={{ flex: 2, fontWeight: 500 }}>
+          {p.name}
+        </div>
 
-      {/* DUE DATE */}
-      <div style={{ width: 90, color: '#6b7280' }}>
-        {p.due_date || '-'}
-      </div>
+        {/* DUE */}
+        <div style={{ width: 90, color: '#6b7280' }}>
+          {p.due_date || '-'}
+        </div>
 
-      {/* NEXT STEP */}
-      <div style={{ flex: 3 }}>
-        {p.next_step || '-'}
-      </div>
+        {/* NEXT STEP */}
+        <div style={{ flex: 3 }}>
+          {p.next_step || '-'}
+        </div>
 
-      {/* % DONE (EDITABLE) */}
-      <div style={{ width: 80, display: 'flex', alignItems: 'center', gap: 2 }}>
-        <input
-          type="number"
-          min={0}
-          max={100}
-          value={p.percent_done || 0}
-          onChange={(e) => {
-            const newVal = Number(e.target.value)
+        {/* % DONE */}
+        <div style={{ width: 70, textAlign: 'right' }}>
+          {p.percent_done || 0}%
+        </div>
 
-            // instant UI update
-            setProjects((prev) =>
-              prev.map((proj) =>
-                proj.id === p.id
-                  ? { ...proj, percent_done: newVal }
-                  : proj
-              )
-            )
-          }}
-          onBlur={async (e) => {
-            const newVal = Number(e.target.value)
-
-            await supabase
-              .from('projects')
-              .update({ percent_done: newVal })
-              .eq('id', p.id)
-          }}
-          style={{
-            width: 50,
-            textAlign: 'right',
-            border: '1px solid #e5e7eb',
-            borderRadius: 4,
-            padding: '2px 4px',
-          }}
-        />
-        <span>%</span>
+        {/* AT BAT */}
+        <div style={{ width: 100, color: '#6b7280' }}>
+          {p.at_bat || '-'}
+        </div>
       </div>
-
-      {/* AT BAT */}
-      <div style={{ width: 100, color: '#6b7280' }}>
-        {p.at_bat || '-'}
-      </div>
-    </div>
-  ))}
-</div>
-      </div>
+    ))}
+</div>      </div>
     </div>
   )
 }
