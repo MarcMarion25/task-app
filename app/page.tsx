@@ -1249,7 +1249,8 @@ const saveNote = async () => {
 }
 function ProjectsCard() {
   const [projects, setProjects] = useState<any[]>([])
-const [showCompleted, setShowCompleted] = useState(true)
+  const [showCompleted, setShowCompleted] = useState(true)
+
   const [name, setName] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [nextStep, setNextStep] = useState('')
@@ -1296,6 +1297,7 @@ const [showCompleted, setShowCompleted] = useState(true)
       <div style={headerStyle('#0ea5e9')}>Projects</div>
 
       <div style={{ padding: 12 }}>
+
         {/* ADD */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <input
@@ -1340,61 +1342,73 @@ const [showCompleted, setShowCompleted] = useState(true)
             Add Project
           </button>
         </div>
-<button
-  onClick={() => setShowCompleted((prev) => !prev)}
-style={{ marginBottom: 8, padding: '4px 8px', borderRadius: 4, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 12, }}
->
-  {showCompleted ? 'Hide Completed' : 'Show Completed'}
-</button>
-   {/* LIST */}
-<div style={{ marginTop: 12 }}>
-  {projects
-    ?.filter((p) => showCompleted || !p.completed)
-    .map((p) => (
-      
-      <div
-        key={p.id}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '6px 8px',
-          borderBottom: '1px solid #e5e7eb',
-          fontSize: 14,
-          opacity: p.completed ? 0.5 : 1,
-        }}
-      >
-        {/* NAME */}
-        <div style={{ flex: 2, fontWeight: 500 }}>
-          {p.name}
+
+        {/* TOGGLE */}
+        <button
+          onClick={() => setShowCompleted((prev) => !prev)}
+          style={{
+            marginTop: 10,
+            marginBottom: 8,
+            padding: '4px 8px',
+            borderRadius: 4,
+            border: '1px solid #e5e7eb',
+            background: 'white',
+            cursor: 'pointer',
+            fontSize: 12,
+          }}
+        >
+          {showCompleted ? 'Hide Completed' : 'Show Completed'}
+        </button>
+
+        {/* LIST */}
+        <div style={{ marginTop: 12 }}>
+          {projects
+            ?.filter((p) => showCompleted || !Boolean(p.completed))
+            .map((p) => (
+              <div
+                key={p.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '6px 8px',
+                  borderBottom: '1px solid #e5e7eb',
+                  fontSize: 14,
+                  opacity: p.completed ? 0.5 : 1,
+                }}
+              >
+                {/* NAME */}
+                <div style={{ flex: 2, fontWeight: 500 }}>
+                  {p.name}
+                </div>
+
+                {/* DUE */}
+                <div style={{ width: 90, color: '#6b7280' }}>
+                  {p.due_date || '-'}
+                </div>
+
+                {/* NEXT STEP */}
+                <div style={{ flex: 3 }}>
+                  {p.next_step || '-'}
+                </div>
+
+                {/* % DONE */}
+                <div style={{ width: 70, textAlign: 'right' }}>
+                  {p.percent_done || 0}%
+                </div>
+
+                {/* AT BAT */}
+                <div style={{ width: 100, color: '#6b7280' }}>
+                  {p.at_bat || '-'}
+                </div>
+              </div>
+            ))}
         </div>
 
-        {/* DUE */}
-        <div style={{ width: 90, color: '#6b7280' }}>
-          {p.due_date || '-'}
-        </div>
-
-        {/* NEXT STEP */}
-        <div style={{ flex: 3 }}>
-          {p.next_step || '-'}
-        </div>
-
-        {/* % DONE */}
-        <div style={{ width: 70, textAlign: 'right' }}>
-          {p.percent_done || 0}%
-        </div>
-
-        {/* AT BAT */}
-        <div style={{ width: 100, color: '#6b7280' }}>
-          {p.at_bat || '-'}
-        </div>
       </div>
-    ))}
-</div>      </div>
     </div>
   )
 }
-
 function IntentionsCard() {
   const [date, setDate] = useState(
     getTodayStr()
