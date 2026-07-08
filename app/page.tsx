@@ -1382,122 +1382,120 @@ const startEdit = (p: any) => {
           {showCompleted ? 'Hide Completed' : 'Show Completed'}
         </button>
 
-        {/* LIST */}
-        <div style={{ marginTop: 12 }}>
-          {projects
-           .filter((p) => showCompleted || (p.percent_done ?? 0) < 100)
-            .map((p) => (
-              <div
-  key={p.id}
-  style={{
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    padding: '6px 8px',
-    borderBottom: '1px solid #e5e7eb',
-    fontSize: 14,
-    opacity: (p.percent_done ?? 0) === 100 ? 0.5 : 1,
-  }}
->
+{/* LIST */}
+<div style={{ marginTop: 12 }}>
+  {projects
+    .filter((p) => showCompleted || (p.percent_done ?? 0) < 100)
+    .map((p) => (
+      <div
+        key={p.id}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '6px 8px',
+          borderBottom: '1px solid #e5e7eb',
+          fontSize: 14,
+          opacity: (p.percent_done ?? 0) === 100 ? 0.5 : 1,
+        }}
+      >
+        {/* NAME */}
+        <div style={{ flex: 2 }}>
+          {editingId === p.id ? (
+            <input
+              value={editData.name}
+              onChange={(e) =>
+                setEditData({ ...editData, name: e.target.value })
+              }
+              style={input}
+            />
+          ) : (
+            <span onClick={() => startEdit(p)}>{p.name}</span>
+          )}
+        </div>
 
-  {/* NAME */}
-  <div style={{ flex: 2 }}>
-    {editingId === p.id ? (
-      <input
-        value={editData.name}
-        onChange={(e) =>
-          setEditData({ ...editData, name: e.target.value })
-        }
-        style={input}
-      />
-    ) : (
-      <span onClick={() => startEdit(p)}>{p.name}</span>
-    )}
-  </div>
+        {/* DUE */}
+        <div style={{ width: 90 }}>
+          {editingId === p.id ? (
+            <input
+              type="date"
+              value={editData.due_date || ''}
+              onChange={(e) =>
+                setEditData({ ...editData, due_date: e.target.value })
+              }
+              style={smallInput}
+            />
+          ) : (
+            <span style={{ color: '#6b7280' }}>
+              {p.due_date || '-'}
+            </span>
+          )}
+        </div>
 
-  {/* DUE */}
-  <div style={{ width: 90 }}>
-    {editingId === p.id ? (
-      <input
-        type="date"
-        value={editData.due_date || ''}
-        onChange={(e) =>
-          setEditData({ ...editData, due_date: e.target.value })
-        }
-        style={smallInput}
-      />
-    ) : (
-      <span style={{ color: '#6b7280' }}>
-        {p.due_date || '-'}
-      </span>
-    )}
-  </div>
+        {/* NEXT STEP */}
+        <div style={{ flex: 3 }}>
+          {editingId === p.id ? (
+            <input
+              value={editData.next_step || ''}
+              onChange={(e) =>
+                setEditData({ ...editData, next_step: e.target.value })
+              }
+              style={input}
+            />
+          ) : (
+            p.next_step || '-'
+          )}
+        </div>
 
-  {/* NEXT STEP */}
-  <div style={{ flex: 3 }}>
-    {editingId === p.id ? (
-      <input
-        value={editData.next_step || ''}
-        onChange={(e) =>
-          setEditData({ ...editData, next_step: e.target.value })
-        }
-        style={input}
-      />
-    ) : (
-      p.next_step || '-'
-    )}
-  </div>
+        {/* % DONE */}
+        <div style={{ width: 70 }}>
+          {editingId === p.id ? (
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={editData.percent_done || 0}
+              onChange={(e) =>
+                setEditData({
+                  ...editData,
+                  percent_done: Number(e.target.value),
+                })
+              }
+              style={smallInput}
+            />
+          ) : (
+            `${p.percent_done || 0}%`
+          )}
+        </div>
 
-  {/* % DONE */}
-  <div style={{ width: 70 }}>
-    {editingId === p.id ? (
-      <input
-        type="number"
-        min={0}
-        max={100}
-        value={editData.percent_done || 0}
-        onChange={(e) =>
-          setEditData({
-            ...editData,
-            percent_done: Number(e.target.value),
-          })
-        }
-        style={smallInput}
-      />
-    ) : (
-      `${p.percent_done || 0}%`
-    )}
-  </div>
+        {/* AT BAT */}
+        <div style={{ width: 100 }}>
+          {editingId === p.id ? (
+            <input
+              value={editData.at_bat || ''}
+              onChange={(e) =>
+                setEditData({ ...editData, at_bat: e.target.value })
+              }
+              style={smallInput}
+            />
+          ) : (
+            <span style={{ color: '#6b7280' }}>
+              {p.at_bat || '-'}
+            </span>
+          )}
+        </div>
 
-  {/* AT BAT */}
-  <div style={{ width: 100 }}>
-    {editingId === p.id ? (
-      <input
-        value={editData.at_bat || ''}
-        onChange={(e) =>
-          setEditData({ ...editData, at_bat: e.target.value })
-        }
-        style={smallInput}
-      />
-    ) : (
-      <span style={{ color: '#6b7280' }}>
-        {p.at_bat || '-'}
-      </span>
-    )}
-  </div>
-
-  {/* EDIT / SAVE */}
-  <div style={{ width: 80 }}>
-    {editingId === p.id ? (
-      <button onClick={saveEdit}>Save</button>
-    ) : (
-      <button onClick={() => startEdit(p)}>Edit</button>
-    )}
-  </div>
-
-</div>
-    </div>
-  )
+        {/* EDIT / SAVE */}
+        <div style={{ width: 80 }}>
+          {editingId === p.id ? (
+            <button onClick={saveEdit}>Save</button>
+          ) : (
+            <button onClick={() => startEdit(p)}>Edit</button>
+          )}
+        </div>
+      </div>
+    ))}
+</div>  )
 }
 function IntentionsCard() {
   const [date, setDate] = useState(
