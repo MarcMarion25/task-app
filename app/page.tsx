@@ -1351,6 +1351,7 @@ style={{ marginBottom: 8, padding: '4px 8px', borderRadius: 4, border: '1px soli
   {projects
     ?.filter((p) => showCompleted || !p.completed)
     .map((p) => (
+      console.log('PROJECT:', p.name, p.completed)
       <div
         key={p.id}
         style={{
