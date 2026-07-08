@@ -1250,6 +1250,8 @@ const saveNote = async () => {
 function ProjectsCard() {
   const [projects, setProjects] = useState<any[]>([])
   const [showCompleted, setShowCompleted] = useState(true)
+  const [editingId, setEditingId] = useState<string | null>(null)
+const [editData, setEditData] = useState<any>({})
 
   const [name, setName] = useState('')
   const [dueDate, setDueDate] = useState('')
@@ -1291,7 +1293,27 @@ function ProjectsCard() {
 
     fetchProjects()
   }
+const startEdit = (p: any) => {
+  setEditingId(p.id)
+  setEditData({ ...p })
+  
+}
+  const saveEdit = async () => {
+  await supabase
+    .from('projects')
+    .update({
+      name: editData.name,
+      due_date: editData.due_date,
+      next_step: editData.next_step,
+      percent_done: editData.percent_done,
+      at_bat: editData.at_bat,
+    })
+    .eq('id', editingId)
 
+  setEditingId(null)
+  fetchProjects()
+}
+  
   return (
     <div style={card}>
       <div style={headerStyle('#0ea5e9')}>Projects</div>
@@ -1366,46 +1388,114 @@ function ProjectsCard() {
            .filter((p) => showCompleted || (p.percent_done ?? 0) < 100)
             .map((p) => (
               <div
-                key={p.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '6px 8px',
-                  borderBottom: '1px solid #e5e7eb',
-                  fontSize: 14,
-                  opacity: p.completed ? 0.5 : 1,
-                }}
-              >
-                {/* NAME */}
-                <div style={{ flex: 2, fontWeight: 500 }}>
-                  {p.name}
-                </div>
+  key={p.id}
+  style={{
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '6px 8px',
+    borderBottom: '1px solid #e5e7eb',
+    fontSize: 14,
+    opacity: (p.percent_done ?? 0) === 100 ? 0.5 : 1,
+  }}
+>
 
-                {/* DUE */}
-                <div style={{ width: 90, color: '#6b7280' }}>
-                  {p.due_date || '-'}
-                </div>
+  {/* NAME */}
+  <div style={{ flex: 2 }}>
+    {editingId === p.id ? (
+      <input
+        value={editData.name}
+        onChange={(e) =>
+          setEditData({ ...editData, name: e.target.value })
+        }
+        style={input}
+      />
+    ) : (
+      <span onClick={() => startEdit(p)}>{p.name}</span>
+    )}
+  </div>
 
-                {/* NEXT STEP */}
-                <div style={{ flex: 3 }}>
-                  {p.next_step || '-'}
-                </div>
+  {/* DUE */}
+  <div style={{ width: 90 }}>
+    {editingId === p.id ? (
+      <input
+        type="date"
+        value={editData.due_date || ''}
+        onChange={(e) =>
+          setEditData({ ...editData, due_date: e.target.value })
+        }
+        style={smallInput}
+      />
+    ) : (
+      <span style={{ color: '#6b7280' }}>
+        {p.due_date || '-'}
+      </span>
+    )}
+  </div>
 
-                {/* % DONE */}
-                <div style={{ width: 70, textAlign: 'right' }}>
-                  {p.percent_done || 0}%
-                </div>
+  {/* NEXT STEP */}
+  <div style={{ flex: 3 }}>
+    {editingId === p.id ? (
+      <input
+        value={editData.next_step || ''}
+        onChange={(e) =>
+          setEditData({ ...editData, next_step: e.target.value })
+        }
+        style={input}
+      />
+    ) : (
+      p.next_step || '-'
+    )}
+  </div>
 
-                {/* AT BAT */}
-                <div style={{ width: 100, color: '#6b7280' }}>
-                  {p.at_bat || '-'}
-                </div>
-              </div>
-            ))}
-        </div>
+  {/* % DONE */}
+  <div style={{ width: 70 }}>
+    {editingId === p.id ? (
+      <input
+        type="number"
+        min={0}
+        max={100}
+        value={editData.percent_done || 0}
+        onChange={(e) =>
+          setEditData({
+            ...editData,
+            percent_done: Number(e.target.value),
+          })
+        }
+        style={smallInput}
+      />
+    ) : (
+      `${p.percent_done || 0}%`
+    )}
+  </div>
 
-      </div>
+  {/* AT BAT */}
+  <div style={{ width: 100 }}>
+    {editingId === p.id ? (
+      <input
+        value={editData.at_bat || ''}
+        onChange={(e) =>
+          setEditData({ ...editData, at_bat: e.target.value })
+        }
+        style={smallInput}
+      />
+    ) : (
+      <span style={{ color: '#6b7280' }}>
+        {p.at_bat || '-'}
+      </span>
+    )}
+  </div>
+
+  {/* EDIT / SAVE */}
+  <div style={{ width: 80 }}>
+    {editingId === p.id ? (
+      <button onClick={saveEdit}>Save</button>
+    ) : (
+      <button onClick={() => startEdit(p)}>Edit</button>
+    )}
+  </div>
+
+</div>
     </div>
   )
 }
