@@ -1342,13 +1342,7 @@ const [showCompleted, setShowCompleted] = useState(true)
         </div>
 <button
   onClick={() => setShowCompleted((prev) => !prev)}
-style={{
-  marginBottom: 8,
-  padding: '8px 12px',
-  background: 'red',   // 👈 force visibility
-  color: 'white',
-  border: 'none',
-}}
+style={{ marginBottom: 8, padding: '4px 8px', borderRadius: 4, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 12, }}
 >
   {showCompleted ? 'Hide Completed' : 'Show Completed'}
 </button>
