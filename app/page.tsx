@@ -1495,9 +1495,12 @@ const startEdit = (p: any) => {
         </div>
       </div>
     ))}
-</div>  )
-}
-function IntentionsCard() {
+</div>
+
+      </div> 
+    </div>   
+  )
+}function IntentionsCard() {
   const [date, setDate] = useState(
     getTodayStr()
   )
