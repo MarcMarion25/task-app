@@ -1363,7 +1363,7 @@ function ProjectsCard() {
         {/* LIST */}
         <div style={{ marginTop: 12 }}>
           {projects
-            ?.filter((p) => showCompleted || !Boolean(p.completed))
+           .filter((p) => showCompleted || (p.percent_done ?? 0) < 100)
             .map((p) => (
               <div
                 key={p.id}
