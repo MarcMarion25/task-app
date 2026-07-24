@@ -1477,12 +1477,17 @@ function IdeasCard() {
             onChange={(e) => setName(e.target.value)}
           />
 
-          <input
-            style={smallInput}
-            placeholder="Category (restaurant, gift, book)"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          />
+        <select
+  value={category}
+  onChange={(e) => setCategory(e.target.value)}
+  style={smallInput}
+>
+  <option value="">Category</option>
+  <option value="restaurant">Restaurant</option>
+  <option value="gift">Gift</option>
+  <option value="book">Book</option>
+            <option value="movie">Book</option>
+</select>
 
           <input
             style={input}
@@ -1498,7 +1503,7 @@ function IdeasCard() {
 
         {/* FILTERS */}
         <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
-          {['all', 'restaurant', 'gift', 'book'].map((c) => (
+          {['all', 'restaurant', 'gift', 'book', 'movie'].map((c) => (
             <button
               key={c}
               onClick={() => setFilter(c)}
