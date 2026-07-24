@@ -614,6 +614,9 @@ export default function Home() {
   <div style={{ ...twoThirds, marginBottom: 20 }}>
       <ProjectsCard />
 </div>
+         <div style={{ ...twoThirds, marginBottom: 20 }}>
+  <IdeasCard />
+</div>
 
 <div style={{ ...twoThirds, marginBottom: 20 }}>
 <HabitsCard />
@@ -1410,6 +1413,144 @@ function ProjectsCard() {
     </div>
   )
 }
+
+function IdeasCard() {
+  const [ideas, setIdeas] = useState<any[]>([])
+  const [name, setName] = useState('')
+  const [category, setCategory] = useState('')
+  const [note, setNote] = useState('')
+  const [filter, setFilter] = useState('all')
+
+  const fetchIdeas = async () => {
+    const { data } = await supabase
+      .from('ideas')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (data) setIdeas(data)
+  }
+
+  useEffect(() => {
+    fetchIdeas()
+  }, [])
+
+  const addIdea = async () => {
+    if (!name) return
+
+    await supabase.from('ideas').insert([
+      {
+        name,
+        category,
+        note,
+      },
+    ])
+
+    setName('')
+    setCategory('')
+    setNote('')
+    fetchIdeas()
+  }
+
+  const deleteIdea = async (id: string) => {
+    await supabase.from('ideas').delete().eq('id', id)
+    fetchIdeas()
+  }
+
+  const filtered =
+    filter === 'all'
+      ? ideas
+      : ideas.filter(
+          (i) => (i.category || '').toLowerCase() === filter
+        )
+
+  return (
+    <div style={card}>
+      <div style={headerStyle('#f59e0b')}>Ideas</div>
+
+      <div style={{ padding: 12 }}>
+        {/* ADD */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <input
+            style={input}
+            placeholder="Idea"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+
+          <input
+            style={smallInput}
+            placeholder="Category (restaurant, gift, book)"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+          />
+
+          <input
+            style={input}
+            placeholder="Notes"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+
+          <button style={addBtn} onClick={addIdea}>
+            Add Idea
+          </button>
+        </div>
+
+        {/* FILTERS */}
+        <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
+          {['all', 'restaurant', 'gift', 'book'].map((c) => (
+            <button
+              key={c}
+              onClick={() => setFilter(c)}
+              style={{
+                fontSize: 12,
+                padding: '4px 6px',
+                border: '1px solid #ddd',
+                borderRadius: 4,
+                background: filter === c ? '#f59e0b' : 'white',
+                color: filter === c ? 'white' : 'black',
+              }}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+
+        {/* LIST */}
+        <div style={{ marginTop: 12 }}>
+          {filtered.map((i) => (
+            <div
+              key={i.id}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                padding: '6px 8px',
+                borderBottom: '1px solid #eee',
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 500 }}>{i.name}</div>
+                <div style={{ fontSize: 12, color: '#6b7280' }}>
+                  {i.category} {i.note && `• ${i.note}`}
+                </div>
+              </div>
+
+              <button
+                onClick={() => deleteIdea(i.id)}
+                style={deleteBtn}
+              >
+                X
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+
 function IntentionsCard() {
   const [date, setDate] = useState(
     getTodayStr()
