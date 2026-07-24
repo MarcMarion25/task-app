@@ -1476,7 +1476,7 @@ function IdeasCard() {
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-
+ 
         <select
   value={category}
   onChange={(e) => setCategory(e.target.value)}
