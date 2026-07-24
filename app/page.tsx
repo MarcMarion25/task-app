@@ -1486,7 +1486,7 @@ function IdeasCard() {
   <option value="restaurant">Restaurant</option>
   <option value="gift">Gift</option>
   <option value="book">Book</option>
-            <option value="movie">Book</option>
+            <option value="movie">Movie</option>
 </select>
 
           <input
