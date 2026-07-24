@@ -2411,7 +2411,108 @@ useEffect(() => {
   )
 }
 
+function IdeasCard() {
+  const [ideas, setIdeas] = useState<any[]>([])
+  const [name, setName] = useState('')
+  const [category, setCategory] = useState('')
+  const [note, setNote] = useState('')
 
+  const fetchIdeas = async () => {
+    const { data } = await supabase
+      .from('ideas')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (data) setIdeas(data)
+  }
+
+  useEffect(() => {
+    fetchIdeas()
+  }, [])
+
+  const addIdea = async () => {
+    if (!name) return
+
+    await supabase.from('ideas').insert([
+      {
+        name,
+        category,
+        note,
+      },
+    ])
+
+    setName('')
+    setCategory('')
+    setNote('')
+    fetchIdeas()
+  }
+
+  return (
+    <div style={card}>
+      <div style={headerStyle('#f59e0b')}>Ideas</div>
+
+      <div style={{ padding: 12 }}>
+
+        {/* ADD */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <input
+            style={input}
+            placeholder="Idea (restaurant, gift, book...)"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+
+          <input
+            style={smallInput}
+            placeholder="Category (restaurant, gift, book)"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+          />
+
+          <input
+            style={input}
+            placeholder="Notes (optional)"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+
+          <button style={addBtn} onClick={addIdea}>
+            Add Idea
+          </button>
+        </div>
+
+        {/* LIST */}
+        <div style={{ marginTop: 12 }}>
+          {ideas.map((i) => (
+            <div
+              key={i.id}
+              style={{
+                padding: '6px 8px',
+                borderBottom: '1px solid #e5e7eb',
+                fontSize: 14,
+              }}
+            >
+              <div style={{ fontWeight: 500 }}>
+                {i.name}
+              </div>
+
+              <div style={{ fontSize: 12, color: '#6b7280' }}>
+                {i.category}
+              </div>
+
+              {i.note && (
+                <div style={{ fontSize: 12 }}>
+                  {i.note}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+      </div>
+    </div>
+  )
+}
 
 function NotesSearchCard() {
   const [date, setDate] = useState('')
