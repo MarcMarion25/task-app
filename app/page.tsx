@@ -1295,13 +1295,15 @@ function ProjectsCard() {
 
     fetchProjects()
   }
-const updatePercent = async (id: string, percent: number) => {
-  const safePercent = Math.min(100, Math.max(0, percent))
-
+const updateProjectField = async (
+  id: string,
+  field: string,
+  value: string | number
+) => {
   const { error } = await supabase
     .from('projects')
     .update({
-      percent_done: safePercent,
+      [field]: value,
     })
     .eq('id', id)
 
@@ -1407,12 +1409,7 @@ const updatePercent = async (id: string, percent: number) => {
                   {p.due_date || '-'}
                 </div>
 
-                {/* NEXT STEP */}
-                <div style={{ flex: 3 }}>
-                  {p.next_step || '-'}
-                </div>
-
-             {/* % DONE */}
+                {/* % DONE */}
 <div
   style={{
     display: 'flex',
@@ -1450,12 +1447,7 @@ const updatePercent = async (id: string, percent: number) => {
   />
 
   <span>%</span>
-</div>
-                {/* AT BAT */}
-                <div style={{ width: 100, color: '#6b7280' }}>
-                  {p.at_bat || '-'}
-                </div>
-              </div>
+</div>              </div>
             ))}
         </div>
 
