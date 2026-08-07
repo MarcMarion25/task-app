@@ -1409,45 +1409,7 @@ const updateProjectField = async (
                   {p.due_date || '-'}
                 </div>
 
-                {/* % DONE */}
-<div
-  style={{
-    display: 'flex',
-    alignItems: 'center',
-    gap: 3,
-    width: 80,
-  }}
->
-  <input
-    type="number"
-    min={0}
-    max={100}
-    value={p.percent_done ?? 0}
-    onChange={(e) => {
-      const newPercent = Number(e.target.value)
-
-      setProjects((current) =>
-        current.map((project) =>
-          project.id === p.id
-            ? { ...project, percent_done: newPercent }
-            : project
-        )
-      )
-    }}
-    onBlur={(e) =>
-      updatePercent(p.id, Number(e.target.value))
-    }
-    style={{
-      width: 50,
-      padding: '3px 4px',
-      border: '1px solid #d1d5db',
-      borderRadius: 4,
-      textAlign: 'right',
-    }}
-  />
-
-  <span>%</span>
-</div>              </div>
+                    </div>
             ))}
         </div>
 
