@@ -1408,6 +1408,113 @@ const updateProjectField = async (
                 <div style={{ width: 90, color: '#6b7280' }}>
                   {p.due_date || '-'}
                 </div>
+                {/* NEXT STEP */}
+<div style={{ flex: 3 }}>
+  <input
+    value={p.next_step ?? ''}
+    onChange={(e) => {
+      const value = e.target.value
+
+      setProjects((current) =>
+        current.map((project) =>
+          project.id === p.id
+            ? { ...project, next_step: value }
+            : project
+        )
+      )
+    }}
+    onBlur={(e) =>
+      updateProjectField(
+        p.id,
+        'next_step',
+        e.target.value
+      )
+    }
+    style={{
+      width: '100%',
+      padding: '4px 6px',
+      border: '1px solid #d1d5db',
+      borderRadius: 4,
+      boxSizing: 'border-box',
+    }}
+  />
+</div>
+
+{/* % DONE */}
+<div
+  style={{
+    display: 'flex',
+    alignItems: 'center',
+    gap: 3,
+    width: 80,
+  }}
+>
+  <input
+    type="number"
+    min={0}
+    max={100}
+    value={p.percent_done ?? 0}
+    onChange={(e) => {
+      const value = Number(e.target.value)
+
+      setProjects((current) =>
+        current.map((project) =>
+          project.id === p.id
+            ? { ...project, percent_done: value }
+            : project
+        )
+      )
+    }}
+    onBlur={(e) =>
+      updateProjectField(
+        p.id,
+        'percent_done',
+        Math.min(100, Math.max(0, Number(e.target.value)))
+      )
+    }
+    style={{
+      width: 50,
+      padding: '4px',
+      border: '1px solid #d1d5db',
+      borderRadius: 4,
+      textAlign: 'right',
+    }}
+  />
+
+  <span>%</span>
+</div>
+
+{/* WHO'S AT BAT */}
+<div style={{ width: 120 }}>
+  <input
+    value={p.at_bat ?? ''}
+    onChange={(e) => {
+      const value = e.target.value
+
+      setProjects((current) =>
+        current.map((project) =>
+          project.id === p.id
+            ? { ...project, at_bat: value }
+            : project
+        )
+      )
+    }}
+    onBlur={(e) =>
+      updateProjectField(
+        p.id,
+        'at_bat',
+        e.target.value
+      )
+    }
+    style={{
+      width: '100%',
+      padding: '4px 6px',
+      border: '1px solid #d1d5db',
+      borderRadius: 4,
+      boxSizing: 'border-box',
+    }}
+  />
+</div>
 
                     </div>
             ))}
