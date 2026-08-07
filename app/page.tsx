@@ -1295,7 +1295,23 @@ function ProjectsCard() {
 
     fetchProjects()
   }
+const updatePercent = async (id: string, percent: number) => {
+  const safePercent = Math.min(100, Math.max(0, percent))
 
+  const { error } = await supabase
+    .from('projects')
+    .update({
+      percent_done: safePercent,
+    })
+    .eq('id', id)
+
+  if (error) {
+    console.error('Error updating project:', error)
+    return
+  }
+
+  fetchProjects()
+}
   return (
     <div style={card}>
       <div style={headerStyle('#0ea5e9')}>Projects</div>
@@ -1396,11 +1412,45 @@ function ProjectsCard() {
                   {p.next_step || '-'}
                 </div>
 
-                {/* % DONE */}
-                <div style={{ width: 70, textAlign: 'right' }}>
-                  {p.percent_done || 0}%
-                </div>
+             {/* % DONE */}
+<div
+  style={{
+    display: 'flex',
+    alignItems: 'center',
+    gap: 3,
+    width: 80,
+  }}
+>
+  <input
+    type="number"
+    min={0}
+    max={100}
+    value={p.percent_done ?? 0}
+    onChange={(e) => {
+      const newPercent = Number(e.target.value)
 
+      setProjects((current) =>
+        current.map((project) =>
+          project.id === p.id
+            ? { ...project, percent_done: newPercent }
+            : project
+        )
+      )
+    }}
+    onBlur={(e) =>
+      updatePercent(p.id, Number(e.target.value))
+    }
+    style={{
+      width: 50,
+      padding: '3px 4px',
+      border: '1px solid #d1d5db',
+      borderRadius: 4,
+      textAlign: 'right',
+    }}
+  />
+
+  <span>%</span>
+</div>
                 {/* AT BAT */}
                 <div style={{ width: 100, color: '#6b7280' }}>
                   {p.at_bat || '-'}
