@@ -2718,7 +2718,23 @@ function RecapExportCard() {
     setBusy(true)
     setMsg('')
 
-    const [tasksRes, notesRes, ratingsRes, intentRes] = await Promise.all([
+    // local-day window for created_at (timestamp) filtering
+    const toLocal = (s: string) => {
+      const [y, m, d] = s.split('-').map(Number)
+      return new Date(y, m - 1, d)
+    }
+    const rangeStart = toLocal(startDate)
+    const rangeEnd = toLocal(endDate)
+    rangeEnd.setDate(rangeEnd.getDate() + 1)
+    const localDay = (ts: string) => {
+      const d = new Date(ts)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+        2,
+        '0'
+      )}-${String(d.getDate()).padStart(2, '0')}`
+    }
+
+    const [tasksRes, newRes, notesRes, ratingsRes, intentRes] = await Promise.all([
       supabase
         .from('tasks')
         .select('*')
@@ -2726,6 +2742,13 @@ function RecapExportCard() {
         .gte('comp_date', startDate)
         .lte('comp_date', endDate)
         .order('comp_date'),
+      supabase
+        .from('tasks')
+        .select('*')
+        .is('parent_id', null) // skip auto-generated recurring copies
+        .gte('created_at', rangeStart.toISOString())
+        .lt('created_at', rangeEnd.toISOString())
+        .order('created_at'),
       supabase
         .from('dailynotes')
         .select('*')
@@ -2745,7 +2768,11 @@ function RecapExportCard() {
     ])
 
     const err =
-      tasksRes.error || notesRes.error || ratingsRes.error || intentRes.error
+      tasksRes.error ||
+      newRes.error ||
+      notesRes.error ||
+      ratingsRes.error ||
+      intentRes.error
     if (err) {
       setBusy(false)
       setMsg('Error: ' + err.message)
@@ -2753,6 +2780,10 @@ function RecapExportCard() {
     }
 
     const tasks = tasksRes.data || []
+    const added = (newRes.data || []).map((t: any) => ({
+      ...t,
+      added_date: localDay(t.created_at),
+    }))
     const notes = notesRes.data || []
     const ratings = ratingsRes.data || []
     const intents = intentRes.data || []
@@ -2761,6 +2792,7 @@ function RecapExportCard() {
     const dates = Array.from(
       new Set([
         ...tasks.map((t: any) => t.comp_date),
+        ...added.map((t: any) => t.added_date),
         ...notes.map((n: any) => n.date),
         ...ratings.map((r: any) => r.rating_date),
         ...intents.map((i: any) => i.date),
@@ -2784,7 +2816,7 @@ function RecapExportCard() {
     let md = `# Daily Recap: ${range}\n`
 
     if (dates.length === 0) {
-      md += `\n_No tasks, notes, rating or intention recorded._\n`
+      md += `\n_No tasks done or added, and no notes, rating or intention recorded._\n`
     }
 
     for (const d of dates) {
@@ -2800,7 +2832,25 @@ function RecapExportCard() {
       if (done.length === 0) md += `- none\n`
       done.forEach((t: any) => {
         const extras = [t.priority, t.status].filter(Boolean).join(', ')
-        md += `- ${t.title}${extras ? ` (${extras})` : ''}\n`
+        md += `- #${t.id} ${t.title}${extras ? ` (${extras})` : ''}\n`
+      })
+
+      const newOnes = added.filter((t: any) => t.added_date === d)
+      md += `\n### New Tasks Added (${newOnes.length})\n`
+      if (newOnes.length === 0) md += `- none\n`
+      newOnes.forEach((t: any) => {
+        const extras = [
+          t.priority,
+          t.status,
+          t.due_date ? `due ${t.due_date}` : '',
+          t.frequency_type && t.frequency_type !== 'once'
+            ? t.frequency_type
+            : '',
+          t.completed ? 'done' : '',
+        ]
+          .filter(Boolean)
+          .join(', ')
+        md += `- #${t.id} ${t.title}${extras ? ` (${extras})` : ''}\n`
       })
 
       const dayNotes = notes.filter((n: any) => n.date === d)
