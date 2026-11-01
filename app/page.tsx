@@ -1,89 +1,1860 @@
 'use client'
 
-
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { supabase } from '@/app/lib/supabase'
 
-// 👇 ABOVE all components (same level as getTodayStr)
+/* =========================================================================
+   TYPES
+   ========================================================================= */
 
+type Task = {
+  id: string
+  title: string
+  due_date: string | null
+  status: string | null
+  completed: boolean
+  comp_date: string | null
+  priority?: string | null
+}
 
+/* =========================================================================
+   DATE HELPERS
+   All app dates are local calendar dates in 'YYYY-MM-DD' form.
+   parseLocalDate avoids new Date('YYYY-MM-DD'), which reads as UTC midnight
+   and lands on the previous day in US time zones.
+   ========================================================================= */
+
+const DAY_MS = 1000 * 60 * 60 * 24
+const DEFAULT_START = '2026-01-01'
+const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const WEEKDAYS_LONG = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+]
+
+const pad = (n: number) => String(n).padStart(2, '0')
+
+const toDateStr = (d: Date) =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
+const getTodayStr = () => toDateStr(new Date())
+
+const getTomorrowStr = () => {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  return toDateStr(d)
+}
+
+/** 'YYYY-MM-DD' (or an ISO timestamp) -> local midnight of that date */
+const parseLocalDate = (s: string) => {
+  const [y, m, d] = s.slice(0, 10).split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
+/** Whole days from a to b (both local midnights; rounding absorbs DST) */
+const daysBetween = (a: Date, b: Date) =>
+  Math.round((b.getTime() - a.getTime()) / DAY_MS)
+
+const msUntilMidnight = () => {
+  const now = new Date()
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+  return midnight.getTime() - now.getTime()
+}
+
+/** Local day counter: changes at local midnight, used to rotate daily text */
+const localDayNumber = () =>
+  Math.floor((Date.now() - new Date().getTimezoneOffset() * 60000) / DAY_MS)
+
+const formatLongDay = (s: string) =>
+  parseLocalDate(s).toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+
+/* =========================================================================
+   RECURRENCE
+   ========================================================================= */
+
+/** Is a habit due on a given local date? */
+const isHabitDueOn = (habit: any, date: Date) => {
+  if (habit.frequency_type === 'daily') return true
+  if (habit.frequency_type === 'weekly') return habit.weekday === date.getDay()
+  if (habit.frequency_type === 'interval') {
+    if (!habit.start_date || !habit.interval_days) return false
+    const diff = daysBetween(parseLocalDate(habit.start_date), date)
+    return diff >= 0 && diff % habit.interval_days === 0
+  }
+  return false
+}
+
+/** Is a recurring task template due on a given local date? */
+const isTaskTemplateDueOn = (task: any, date: Date) => {
+  const anchorStr: string | null = task.due_date || task.created_at || null
+  const anchor = anchorStr ? parseLocalDate(anchorStr) : null
+
+  switch (task.frequency_type) {
+    case 'daily':
+      return true
+    case 'weekly':
+      if (task.weekday !== null && task.weekday !== undefined) {
+        return task.weekday === date.getDay()
+      }
+      return !!anchor && anchor.getDay() === date.getDay()
+    case 'monthly':
+      return !!anchor && anchor.getDate() === date.getDate()
+    case 'interval': {
+      if (!anchor || !task.interval_days) return false
+      const diff = daysBetween(anchor, date)
+      return diff >= 0 && diff % task.interval_days === 0
+    }
+    default:
+      return false
+  }
+}
+
+/** Supabase returns at most 1000 rows per request; page through all of them */
+const fetchAllRows = async (table: string, columns: string) => {
+  const rows: any[] = []
+  const size = 1000
+  for (let from = 0; ; from += size) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(columns)
+      .order('id')
+      .range(from, from + size - 1)
+    if (error || !data) break
+    rows.push(...data)
+    if (data.length < size) break
+  }
+  return rows
+}
+
+/** Create any missing habit_logs rows from each habit's start date to today */
 const generateHabitLogs = async () => {
-  const today = new Date()
+  const { data: habits } = await supabase.from('habits').select('*')
+  if (!habits?.length) return
 
-  const { data: habits } = await supabase
-    .from('habits')
-    .select('*')
+  const logs = await fetchAllRows('habit_logs', 'id, habit_id, log_date')
+  const existing = new Set(logs.map((l) => `${l.habit_id}|${l.log_date}`))
 
-  if (!habits) return
+  const today = parseLocalDate(getTodayStr())
+  const toInsert: any[] = []
 
   for (const habit of habits) {
     if (!habit.start_date) continue
 
-    const startDate = new Date(habit.start_date)
-    let current = new Date(startDate)
-
-    while (current <= today) {
-      const dateStr = current.toISOString().split('T')[0]
-      const weekday = current.getDay()
-
-      let isDue = false
-
-      if (habit.frequency_type === 'daily') isDue = true
-
-      if (habit.frequency_type === 'weekly') {
-        isDue = habit.weekday === weekday
-      }
-
-      if (habit.frequency_type === 'interval') {
-        const diff = Math.floor(
-          (current.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-        )
-        isDue = diff >= 0 && diff % habit.interval_days === 0
-      }
-
-      if (!isDue) {
-        current.setDate(current.getDate() + 1)
-        continue
-      }
-
-      const { data: existing } = await supabase
-        .from('habit_logs')
-        .select('id')
-        .eq('habit_id', habit.id)
-        .eq('log_date', dateStr)
-
-      if (!existing || existing.length === 0) {
-        await supabase.from('habit_logs').insert([
-          {
-            habit_id: habit.id,
-            log_date: dateStr,
-            completed: false
-          }
-        ])
-      }
-
-      current.setDate(current.getDate() + 1)
+    for (
+      const d = parseLocalDate(habit.start_date);
+      d <= today;
+      d.setDate(d.getDate() + 1)
+    ) {
+      const dateStr = toDateStr(d)
+      if (!isHabitDueOn(habit, d)) continue
+      if (existing.has(`${habit.id}|${dateStr}`)) continue
+      toInsert.push({ habit_id: habit.id, log_date: dateStr, completed: false })
     }
+  }
+
+  if (toInsert.length) await supabase.from('habit_logs').insert(toInsert)
+}
+
+/** Create today's instance of each recurring task template that is due */
+const generateRecurringTasks = async () => {
+  const todayStr = getTodayStr()
+  const today = parseLocalDate(todayStr)
+
+  const { data: templates } = await supabase
+    .from('tasks')
+    .select('*')
+    .is('parent_id', null)
+    .neq('frequency_type', 'once')
+
+  if (!templates?.length) return
+
+  const { data: todays } = await supabase
+    .from('tasks')
+    .select('parent_id')
+    .eq('due_date', todayStr)
+    .not('parent_id', 'is', null)
+
+  const alreadyCreated = new Set((todays || []).map((t: any) => t.parent_id))
+
+  const toInsert = templates
+    .filter((t: any) => t.frequency_type && !alreadyCreated.has(t.id))
+    .filter((t: any) => isTaskTemplateDueOn(t, today))
+    .map((t: any) => ({
+      title: t.title,
+      due_date: todayStr,
+      status: t.status,
+      completed: false,
+      parent_id: t.id, // link to template
+      frequency_type: 'once', // instance is not recurring
+    }))
+
+  if (toInsert.length) await supabase.from('tasks').insert(toInsert)
+}
+
+/* =========================================================================
+   MAIN PAGE
+   ========================================================================= */
+
+export default function Home() {
+  // bumps whenever a task is completed so the Completed card refreshes
+  const [taskVersion, setTaskVersion] = useState(0)
+  const bumpTasks = () => setTaskVersion((v) => v + 1)
+
+  return (
+    <div style={styles.page}>
+      <div style={styles.container}>
+        <h1 style={styles.title}>Task App</h1>
+
+        <div style={styles.cards}>
+          <div style={span(1)}>
+            <AffirmationCard />
+          </div>
+          <div style={span(2)}>
+            <QuoteCard />
+          </div>
+          <div style={span(3)}>
+            <TasksCard onChanged={bumpTasks} />
+          </div>
+          <div style={span(3)}>
+            <NotesCard />
+          </div>
+          <div style={span(3)}>
+            <IntentionsCard />
+          </div>
+          <div style={span(3)}>
+            <DayRatingCard />
+          </div>
+          <div style={span(3)}>
+            <CompletedTasksCard refreshKey={taskVersion} />
+          </div>
+          <div style={span(3)}>
+            <ProjectsCard />
+          </div>
+          <div style={span(3)}>
+            <IdeasCard />
+          </div>
+          <div style={span(3)}>
+            <HabitsCard />
+          </div>
+          <div style={span(3)}>
+            <NotesSearchCard />
+          </div>
+          <div style={span(3)}>
+            <RecapExportCard />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* =========================================================================
+   DAILY TEXT (Affirmation + Quote)
+   ========================================================================= */
+
+function DailyTextCard({
+  title,
+  color,
+  items,
+}: {
+  title: string
+  color: string
+  items: string[]
+}) {
+  const [text, setText] = useState('')
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>
+    const update = () => {
+      setText(items[localDayNumber() % items.length])
+      timer = setTimeout(update, msUntilMidnight() + 1000)
+    }
+    update()
+    return () => clearTimeout(timer)
+  }, [items])
+
+  return (
+    <div style={card}>
+      <div style={headerStyle(color)}>{title}</div>
+      <div style={dailyTextBody}>{text}</div>
+    </div>
+  )
+}
+
+function AffirmationCard() {
+  return <DailyTextCard title="Affirmation" color="#ec4899" items={affirmations} />
+}
+
+function QuoteCard() {
+  return <DailyTextCard title="Quote of the Day" color="#6366f1" items={quotes} />
+}
+
+/* =========================================================================
+   TASKS
+   ========================================================================= */
+
+function TasksCard({ onChanged }: { onChanged: () => void }) {
+  // add form
+  const [title, setTitle] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const [status, setStatus] = useState('')
+  const [priority, setPriority] = useState('')
+  const [frequencyType, setFrequencyType] = useState('once')
+  const [intervalDays, setIntervalDays] = useState(3)
+  const [weekday, setWeekday] = useState(1)
+
+  // list + filter
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [startDate, setStartDate] = useState(DEFAULT_START)
+  const [endDate, setEndDate] = useState(getTomorrowStr())
+
+  // edit
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editStatus, setEditStatus] = useState('')
+  const [editDueDate, setEditDueDate] = useState('')
+  const [editPriority, setEditPriority] = useState('')
+
+  const fetchTasks = async () => {
+    let query = supabase
+      .from('tasks')
+      .select('*')
+      .eq('completed', false) // open tasks only
+      .order('due_date')
+
+    if (startDate) query = query.gte('due_date', startDate)
+    if (endDate) query = query.lte('due_date', endDate)
+
+    const { data } = await query
+    if (data) setTasks(data)
+  }
+
+  useEffect(() => {
+    const run = async () => {
+      await generateRecurringTasks()
+      fetchTasks()
+    }
+    run()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const addTask = async () => {
+    if (!title) return
+
+    await supabase.from('tasks').insert([
+      {
+        title,
+        due_date: dueDate || null,
+        status,
+        priority,
+        frequency_type: frequencyType,
+        interval_days: frequencyType === 'interval' ? intervalDays : null,
+        weekday: frequencyType === 'weekly' ? weekday : null,
+      },
+    ])
+
+    setTitle('')
+    setDueDate('')
+    setStatus('')
+    fetchTasks()
+  }
+
+  const toggleComplete = async (task: Task) => {
+    const isCompleting = !task.completed
+
+    await supabase
+      .from('tasks')
+      .update({
+        completed: isCompleting,
+        comp_date: isCompleting ? getTodayStr() : null,
+      })
+      .eq('id', task.id)
+
+    fetchTasks()
+    onChanged() // refresh Completed Tasks card
+  }
+
+  const startEdit = (task: Task) => {
+    setEditingId(task.id)
+    setEditTitle(task.title)
+    setEditStatus(task.status || '')
+    setEditDueDate(task.due_date || '')
+    setEditPriority(task.priority || '')
+  }
+
+  const saveEdit = async (id: string) => {
+    await supabase
+      .from('tasks')
+      .update({
+        title: editTitle,
+        status: editStatus,
+        due_date: editDueDate || null,
+        priority: editPriority,
+      })
+      .eq('id', id)
+
+    setEditingId(null)
+    fetchTasks()
+  }
+
+  return (
+    <div style={card}>
+      <div style={headerStyle('#16a34a')}>Tasks</div>
+
+      {/* ADD */}
+      <div style={section}>
+        <div style={wrapRow}>
+          <input
+            style={input}
+            placeholder="Task title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+          <input
+            style={smallInput}
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+          />
+          <input
+            style={smallInput}
+            placeholder="Status"
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+          />
+          <PrioritySelect value={priority} onChange={setPriority} />
+          <select
+            style={smallInput}
+            value={frequencyType}
+            onChange={(e) => setFrequencyType(e.target.value)}
+          >
+            <option value="once">One-time</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="interval">Every X days</option>
+          </select>
+
+          {frequencyType === 'interval' && (
+            <input
+              style={smallInput}
+              type="number"
+              value={intervalDays}
+              onChange={(e) => setIntervalDays(Number(e.target.value))}
+            />
+          )}
+
+          {frequencyType === 'weekly' && (
+            <select
+              style={smallInput}
+              value={weekday}
+              onChange={(e) => setWeekday(Number(e.target.value))}
+            >
+              {WEEKDAYS_SHORT.map((d, i) => (
+                <option key={d} value={i}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <button style={addBtn} onClick={addTask}>
+            +
+          </button>
+        </div>
+      </div>
+
+      {/* FILTER */}
+      <div style={section}>
+        <div style={row}>
+          <input
+            style={smallInput}
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+          />
+          <input
+            style={smallInput}
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+          />
+          <button style={filterBtn} onClick={fetchTasks}>
+            Filter
+          </button>
+        </div>
+      </div>
+
+      {/* LIST */}
+      <div style={{ marginTop: 10 }}>
+        {tasks.map((task) => (
+          <div key={task.id} style={taskRow}>
+            <input
+              type="checkbox"
+              style={{ transform: 'scale(2)', cursor: 'pointer' }}
+              checked={task.completed}
+              onChange={() => toggleComplete(task)}
+            />
+
+            {editingId === task.id ? (
+              <>
+                <input
+                  style={input}
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                />
+                <input
+                  style={smallInput}
+                  type="date"
+                  value={editDueDate}
+                  onChange={(e) => setEditDueDate(e.target.value)}
+                />
+                <input
+                  style={smallInput}
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value)}
+                />
+                <PrioritySelect value={editPriority} onChange={setEditPriority} />
+                <button style={filterBtn} onClick={() => saveEdit(task.id)}>
+                  Save
+                </button>
+              </>
+            ) : (
+              <>
+                <span style={{ flex: 2, display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <strong>#{task.id}</strong>
+                  <strong>{task.title}</strong>
+                </span>
+                <span
+                  style={{
+                    width: 70,
+                    fontWeight: 500,
+                    color: priorityTextColor(task.priority),
+                  }}
+                >
+                  {task.priority || '-'}
+                </span>
+                <span style={{ flex: 1 }}>{task.due_date || '-'}</span>
+                <span style={{ flex: 1 }}>{task.status || '-'}</span>
+                <button
+                  onClick={() => startEdit(task)}
+                  style={{ ...editBtn, background: priorityBgColor(task.priority) }}
+                >
+                  Edit
+                </button>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function PrioritySelect({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <select style={smallInput} value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">Priority</option>
+      <option value="high">High</option>
+      <option value="medium">Medium</option>
+      <option value="low">Low</option>
+    </select>
+  )
+}
+
+const priorityTextColor = (p?: string | null) =>
+  p === 'high' ? '#dc2626' : p === 'medium' ? '#d97706' : p === 'low' ? '#16a34a' : '#6b7280'
+
+const priorityBgColor = (p?: string | null) =>
+  p === 'high' ? '#dc2626' : p === 'medium' ? '#f59e0b' : p === 'low' ? '#16a34a' : '#6b7280'
+
+/* =========================================================================
+   COMPLETED TASKS
+   ========================================================================= */
+
+function CompletedTasksCard({ refreshKey }: { refreshKey: number }) {
+  const [startDate, setStartDate] = useState(getTodayStr())
+  const [endDate, setEndDate] = useState(getTodayStr())
+  const [tasks, setTasks] = useState<Task[]>([])
+
+  const fetchCompleted = async () => {
+    let query = supabase
+      .from('tasks')
+      .select('*')
+      .eq('completed', true)
+      .order('comp_date', { ascending: false })
+
+    if (startDate) query = query.gte('comp_date', startDate)
+    if (endDate) query = query.lte('comp_date', endDate)
+
+    const { data } = await query
+    if (data) setTasks(data)
+  }
+
+  useEffect(() => {
+    fetchCompleted()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startDate, endDate, refreshKey])
+
+  return (
+    <div style={card}>
+      <div style={headerStyle('#0ea5e9')}>Completed Tasks</div>
+
+      <div style={section}>
+        <div style={row}>
+          <input
+            style={smallInput}
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+          />
+          <input
+            style={smallInput}
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+          />
+          <button style={filterBtn} onClick={fetchCompleted}>
+            Filter
+          </button>
+        </div>
+
+        <div style={{ marginTop: 10 }}>
+          {tasks.length === 0 && <div>No completed tasks</div>}
+
+          {tasks.map((task) => (
+            <div key={task.id} style={taskRow}>
+              <span style={{ flex: 2, display: 'flex', gap: 8 }}>
+                <strong>#{task.id}</strong>
+                <strong>{task.title}</strong>
+              </span>
+              <span style={{ flex: 1 }}>{task.comp_date || '-'}</span>
+              <span style={{ flex: 1 }}>{task.status || '-'}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* =========================================================================
+   NOTES
+   ========================================================================= */
+
+function NotesCard() {
+  const [noteDate, setNoteDate] = useState(getTodayStr())
+  const [note, setNote] = useState('')
+  const [tag, setTag] = useState('')
+  const [notes, setNotes] = useState<any[]>([])
+
+  const fetchNotes = async (date: string) => {
+    const { data } = await supabase
+      .from('dailynotes')
+      .select('*')
+      .eq('date', date)
+      .order('created_at', { ascending: false })
+
+    setNotes(data || [])
+  }
+
+  useEffect(() => {
+    fetchNotes(noteDate)
+  }, [noteDate])
+
+  const saveNote = async () => {
+    if (!note) return
+
+    const { error } = await supabase
+      .from('dailynotes')
+      .insert([{ date: noteDate, note, tag }])
+
+    if (error) {
+      alert(error.message)
+      return
+    }
+
+    setNote('')
+    setTag('')
+    fetchNotes(noteDate)
+  }
+
+  return (
+    <div style={card}>
+      <div style={headerStyle('#9333ea')}>Notes</div>
+
+      <div style={{ padding: 12 }}>
+        <div style={{ marginBottom: 10 }}>
+          <input
+            style={smallInput}
+            type="date"
+            value={noteDate}
+            onChange={(e) => setNoteDate(e.target.value)}
+          />
+          <input
+            style={smallInput}
+            placeholder="tag"
+            value={tag}
+            onChange={(e) => setTag(e.target.value)}
+          />
+        </div>
+
+        <textarea
+          style={textarea(50)}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Write your notes..."
+        />
+
+        {notes.map((n) => (
+          <div key={n.id} style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div>{n.note}</div>
+            {n.tag && <div style={{ fontSize: 12, color: '#9333ea' }}>#{n.tag}</div>}
+          </div>
+        ))}
+
+        <button style={filterBtn} onClick={saveNote}>
+          Save
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* =========================================================================
+   INTENTIONS
+   ========================================================================= */
+
+function IntentionsCard() {
+  const [date, setDate] = useState(getTodayStr())
+  const [text, setText] = useState('')
+  const [recent, setRecent] = useState<any[]>([])
+
+  const fetchIntentions = async () => {
+    const { data: current } = await supabase
+      .from('intentions')
+      .select('*')
+      .eq('date', date)
+      .maybeSingle()
+
+    setText(current?.intention || '')
+
+    const { data } = await supabase
+      .from('intentions')
+      .select('*')
+      .order('date', { ascending: false })
+      .limit(5)
+
+    if (data) setRecent(data)
+  }
+
+  useEffect(() => {
+    fetchIntentions()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date])
+
+  const save = async () => {
+    const { error } = await supabase
+      .from('intentions')
+      .upsert({ date, intention: text }, { onConflict: 'date' })
+
+    if (error) alert(error.message)
+    fetchIntentions()
+  }
+
+  return (
+    <div style={card}>
+      <div style={headerStyle('#f97316')}>Intention</div>
+
+      <div style={{ padding: 12 }}>
+        <div style={{ marginBottom: 10 }}>
+          <input
+            style={smallInput}
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </div>
+
+        <div style={fieldLabel}>Today I will...</div>
+
+        <textarea
+          style={textarea(120)}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Today I will."
+        />
+
+        <button style={filterBtn} onClick={save}>
+          Save
+        </button>
+
+        <div style={{ marginTop: 20 }}>
+          <h4>Last 5 Days</h4>
+          {recent.map((item) => (
+            <div key={item.id} style={taskRow}>
+              <div style={{ width: 100 }}>{item.date}</div>
+              <div>{item.intention}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* =========================================================================
+   RATE THE DAY
+   ========================================================================= */
+
+const ratingColor = (r: number) =>
+  r <= 3 ? '#ef4444' : r <= 6 ? '#f59e0b' : r <= 8 ? '#3b82f6' : '#22c55e'
+
+function DayRatingCard() {
+  const [date, setDate] = useState(getTodayStr())
+  const [text, setText] = useState('')
+  const [rating, setRating] = useState(0)
+  const [recent, setRecent] = useState<any[]>([])
+
+  const fetchRating = async () => {
+    const { data } = await supabase
+      .from('day_ratings')
+      .select('*')
+      .eq('rating_date', date)
+      .maybeSingle()
+
+    setText(data?.what_went_well || '')
+    setRating(data?.rating ?? 0)
+
+    const { data: recentData } = await supabase
+      .from('day_ratings')
+      .select('*')
+      .order('rating_date', { ascending: false })
+      .limit(5)
+
+    if (recentData) setRecent(recentData)
+  }
+
+  useEffect(() => {
+    fetchRating()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date])
+
+  const save = async () => {
+    await supabase
+      .from('day_ratings')
+      .upsert(
+        { rating_date: date, what_went_well: text, rating },
+        { onConflict: 'rating_date' }
+      )
+    await fetchRating()
+  }
+
+  return (
+    <div style={card}>
+      <div style={headerStyle('#3b82f6')}>Rate the Day</div>
+
+      <div style={{ padding: 12 }}>
+        <div style={{ marginBottom: 10 }}>
+          <input
+            style={smallInput}
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </div>
+
+        <div style={fieldLabel}>What went well</div>
+
+        <textarea
+          style={textarea(120)}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="What went well..."
+        />
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+          {Array.from({ length: 11 }, (_, i) => (
+            <button
+              key={i}
+              onClick={() => setRating(i)}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 6,
+                border: rating === i ? '2px solid #3b82f6' : '1px solid #ccc',
+                background: 'white',
+                cursor: 'pointer',
+                fontWeight: 600,
+                color: ratingColor(i),
+              }}
+            >
+              {i}
+            </button>
+          ))}
+        </div>
+
+        <button style={filterBtn} onClick={save}>
+          Save
+        </button>
+
+        <div style={{ marginTop: 20 }}>
+          <h4>Last 5 Days</h4>
+          {recent.map((item) => (
+            <div key={item.id} style={taskRow}>
+              <div style={{ width: 100 }}>{item.rating_date}</div>
+              <div style={{ width: 50 }}>{item.rating}</div>
+              <div>{item.what_went_well}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* =========================================================================
+   PROJECTS
+   ========================================================================= */
+
+function ProjectsCard() {
+  const [projects, setProjects] = useState<any[]>([])
+  const [showCompleted, setShowCompleted] = useState(true)
+
+  const [name, setName] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const [nextStep, setNextStep] = useState('')
+  const [percent, setPercent] = useState(0)
+  const [atBat, setAtBat] = useState('')
+
+  const fetchProjects = async () => {
+    const { data } = await supabase.from('projects').select('*').order('due_date')
+    if (data) setProjects(data)
+  }
+
+  useEffect(() => {
+    fetchProjects()
+  }, [])
+
+  const addProject = async () => {
+    if (!name) return
+
+    await supabase.from('projects').insert([
+      {
+        name,
+        due_date: dueDate || null,
+        next_step: nextStep,
+        percent_done: percent,
+        at_bat: atBat,
+      },
+    ])
+
+    setName('')
+    setDueDate('')
+    setNextStep('')
+    setPercent(0)
+    setAtBat('')
+    fetchProjects()
+  }
+
+  /** update one field locally while typing */
+  const setLocalField = (id: string, field: string, value: string | number) =>
+    setProjects((current) =>
+      current.map((p) => (p.id === id ? { ...p, [field]: value } : p))
+    )
+
+  /** save one field to the database (on blur) */
+  const saveField = async (id: string, field: string, value: string | number) => {
+    const { error } = await supabase
+      .from('projects')
+      .update({ [field]: value })
+      .eq('id', id)
+
+    if (error) {
+      console.error('Error updating project:', error)
+      return
+    }
+    fetchProjects()
+  }
+
+  return (
+    <div style={card}>
+      <div style={headerStyle('#0ea5e9')}>Projects</div>
+
+      <div style={{ padding: 12 }}>
+        {/* ADD */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <input
+            style={input}
+            placeholder="Project name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <input
+            style={smallInput}
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+          />
+          <input
+            style={input}
+            placeholder="Next step"
+            value={nextStep}
+            onChange={(e) => setNextStep(e.target.value)}
+          />
+          <input
+            style={smallInput}
+            type="number"
+            min={0}
+            max={100}
+            value={percent}
+            onChange={(e) => setPercent(Number(e.target.value))}
+            placeholder="% done"
+          />
+          <input
+            style={smallInput}
+            placeholder="Who’s at bat"
+            value={atBat}
+            onChange={(e) => setAtBat(e.target.value)}
+          />
+          <button style={addBtn} onClick={addProject}>
+            Add Project
+          </button>
+        </div>
+
+        {/* TOGGLE */}
+        <button onClick={() => setShowCompleted((v) => !v)} style={toggleBtn}>
+          {showCompleted ? 'Hide Completed' : 'Show Completed'}
+        </button>
+
+        {/* LIST */}
+        <div style={{ marginTop: 12 }}>
+          {projects
+            .filter((p) => showCompleted || (p.percent_done ?? 0) < 100)
+            .map((p) => (
+              <div
+                key={p.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '6px 8px',
+                  borderBottom: '1px solid #e5e7eb',
+                  fontSize: 14,
+                  opacity: p.completed ? 0.5 : 1,
+                }}
+              >
+                <div style={{ flex: 2, fontWeight: 500 }}>{p.name}</div>
+                <div style={{ width: 90, color: '#6b7280' }}>{p.due_date || '-'}</div>
+
+                {/* NEXT STEP */}
+                <div style={{ flex: 3 }}>
+                  <input
+                    style={cellInput}
+                    value={p.next_step ?? ''}
+                    onChange={(e) => setLocalField(p.id, 'next_step', e.target.value)}
+                    onBlur={(e) => saveField(p.id, 'next_step', e.target.value)}
+                  />
+                </div>
+
+                {/* % DONE */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 3, width: 80 }}>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    style={{ ...cellInput, width: 50, padding: 4, textAlign: 'right' }}
+                    value={p.percent_done ?? 0}
+                    onChange={(e) =>
+                      setLocalField(p.id, 'percent_done', Number(e.target.value))
+                    }
+                    onBlur={(e) =>
+                      saveField(
+                        p.id,
+                        'percent_done',
+                        Math.min(100, Math.max(0, Number(e.target.value)))
+                      )
+                    }
+                  />
+                  <span>%</span>
+                </div>
+
+                {/* WHO'S AT BAT */}
+                <div style={{ width: 120 }}>
+                  <input
+                    style={cellInput}
+                    value={p.at_bat ?? ''}
+                    onChange={(e) => setLocalField(p.id, 'at_bat', e.target.value)}
+                    onBlur={(e) => saveField(p.id, 'at_bat', e.target.value)}
+                  />
+                </div>
+              </div>
+            ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* =========================================================================
+   IDEAS
+   ========================================================================= */
+
+const IDEA_CATEGORIES = ['restaurant', 'gift', 'book', 'movie']
+
+function IdeasCard() {
+  const [ideas, setIdeas] = useState<any[]>([])
+  const [name, setName] = useState('')
+  const [category, setCategory] = useState('')
+  const [note, setNote] = useState('')
+  const [filter, setFilter] = useState('all')
+
+  const fetchIdeas = async () => {
+    const { data } = await supabase
+      .from('ideas')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (data) setIdeas(data)
+  }
+
+  useEffect(() => {
+    fetchIdeas()
+  }, [])
+
+  const addIdea = async () => {
+    if (!name) return
+    await supabase.from('ideas').insert([{ name, category, note }])
+    setName('')
+    setCategory('')
+    setNote('')
+    fetchIdeas()
+  }
+
+  const deleteIdea = async (id: string) => {
+    await supabase.from('ideas').delete().eq('id', id)
+    fetchIdeas()
+  }
+
+  const filtered =
+    filter === 'all'
+      ? ideas
+      : ideas.filter((i) => (i.category || '').toLowerCase() === filter)
+
+  return (
+    <div style={card}>
+      <div style={headerStyle('#f59e0b')}>Ideas</div>
+
+      <div style={{ padding: 12 }}>
+        {/* ADD */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <input
+            style={input}
+            placeholder="Idea"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <select
+            style={smallInput}
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+          >
+            <option value="">Category</option>
+            {IDEA_CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c[0].toUpperCase() + c.slice(1)}
+              </option>
+            ))}
+          </select>
+          <input
+            style={input}
+            placeholder="Notes"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+          <button style={addBtn} onClick={addIdea}>
+            Add Idea
+          </button>
+        </div>
+
+        {/* FILTERS */}
+        <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
+          {['all', ...IDEA_CATEGORIES].map((c) => (
+            <button
+              key={c}
+              onClick={() => setFilter(c)}
+              style={{
+                fontSize: 12,
+                padding: '4px 6px',
+                border: '1px solid #ddd',
+                borderRadius: 4,
+                background: filter === c ? '#f59e0b' : 'white',
+                color: filter === c ? 'white' : 'black',
+              }}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+
+        {/* LIST */}
+        <div style={{ marginTop: 12 }}>
+          {filtered.map((i) => (
+            <div
+              key={i.id}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                padding: '6px 8px',
+                borderBottom: '1px solid #eee',
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 500 }}>{i.name}</div>
+                <div style={{ fontSize: 12, color: '#6b7280' }}>
+                  {i.category} {i.note && `• ${i.note}`}
+                </div>
+              </div>
+              <button onClick={() => deleteIdea(i.id)} style={deleteBtn}>
+                X
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* =========================================================================
+   HABITS
+   ========================================================================= */
+
+const habitFrequencyLabel = (habit: any) => {
+  if (habit.frequency_type === 'daily') return 'Daily'
+  if (habit.frequency_type === 'interval') return `Every ${habit.interval_days} days`
+  if (habit.frequency_type === 'weekly') return WEEKDAYS_SHORT[habit.weekday] ?? ''
+  return ''
+}
+
+const readFlag = (key: string) => {
+  try {
+    return localStorage.getItem(key) === 'true'
+  } catch {
+    return false
   }
 }
 
-const DEFAULT_START = '2026-01-01'
-
-const getTodayStr = () => {
-  const today = new Date()
-  return `${today.getFullYear()}-${
-    String(today.getMonth() + 1).padStart(2, '0')
-  }-${String(today.getDate()).padStart(2, '0')}`
+const writeFlag = (key: string) => {
+  try {
+    localStorage.setItem(key, 'true')
+  } catch {
+    /* storage unavailable */
+  }
 }
-const getTomorrowStr = () => {
-  const d = new Date()
-  d.setDate(d.getDate() + 1)
 
-  return `${d.getFullYear()}-${
-    String(d.getMonth() + 1).padStart(2, '0')
-  }-${String(d.getDate()).padStart(2, '0')}`
+function HabitsCard() {
+  const [today, setToday] = useState(getTodayStr())
+  const [habits, setHabits] = useState<any[]>([])
+  const [logs, setLogs] = useState<any[]>([])
+
+  const [newHabit, setNewHabit] = useState('')
+  const [frequencyType, setFrequencyType] = useState('daily')
+  const [intervalDays, setIntervalDays] = useState(3)
+  const [habitWeekday, setHabitWeekday] = useState(6)
+
+  const [showCelebration, setShowCelebration] = useState(true)
+
+  const fetchHabits = async () => {
+    const { data } = await supabase.from('habits').select('*')
+    if (data) setHabits(data)
+
+    const { data: logData } = await supabase
+      .from('habit_logs')
+      .select('*')
+      .eq('log_date', getTodayStr())
+    if (logData) setLogs(logData)
+  }
+
+  // initial load: backfill logs, then fetch
+  useEffect(() => {
+    const run = async () => {
+      await generateHabitLogs()
+      fetchHabits()
+    }
+    run()
+  }, [])
+
+  // roll over at midnight
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setToday(getTodayStr())
+      generateHabitLogs().then(fetchHabits)
+    }, msUntilMidnight() + 1000)
+    return () => clearTimeout(timer)
+  }, [today])
+
+  const todayDate = parseLocalDate(today)
+  const displayDate = todayDate.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  })
+
+  const isCompleted = (habitId: string) =>
+    logs.find((l) => l.habit_id === habitId && l.log_date === today)?.completed ?? false
+
+  const dueHabits = habits.filter((h) => isHabitDueOn(h, todayDate))
+  const sortedHabits = [...dueHabits].sort(
+    (a, b) => Number(isCompleted(a.id)) - Number(isCompleted(b.id))
+  )
+  const allCompleted = dueHabits.length > 0 && dueHabits.every((h) => isCompleted(h.id))
+  // celebration (original behavior): fires once per day when all due habits are done
+  const alreadyShownToday = readFlag('celebration_' + today)
+  const shouldCelebrate = allCompleted && showCelebration && !alreadyShownToday
+
+  useEffect(() => {
+    if (allCompleted && !alreadyShownToday) writeFlag('celebration_' + today)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allCompleted])
+
+  const toggleHabit = async (habitId: string) => {
+    const todayStr = getTodayStr()
+
+    const { data: log } = await supabase
+      .from('habit_logs')
+      .select('*')
+      .eq('habit_id', habitId)
+      .eq('log_date', todayStr)
+      .maybeSingle()
+
+    if (!log) {
+      // no log yet for today: create it already checked
+      await supabase
+        .from('habit_logs')
+        .insert([{ habit_id: habitId, log_date: todayStr, completed: true }])
+    } else {
+      await supabase
+        .from('habit_logs')
+        .update({ completed: !log.completed })
+        .eq('id', log.id)
+    }
+
+    fetchHabits()
+  }
+
+  const addHabit = async () => {
+    if (!newHabit) return
+
+    await supabase.from('habits').insert([
+      {
+        name: newHabit,
+        frequency_type: frequencyType,
+        interval_days: frequencyType === 'interval' ? intervalDays : null,
+        weekday: frequencyType === 'weekly' ? habitWeekday : null,
+        start_date: today,
+      },
+    ])
+
+    setNewHabit('')
+    fetchHabits()
+  }
+
+  const deleteHabit = async (id: string) => {
+    await supabase.from('habit_logs').delete().eq('habit_id', id)
+    await supabase.from('habits').delete().eq('id', id)
+    fetchHabits()
+  }
+
+  return (
+    <div style={card}>
+      <div style={headerStyle('#22c55e')}>Habits — {displayDate}</div>
+
+      <div style={{ padding: 12 }}>
+        {/* CELEBRATION */}
+        {shouldCelebrate && (
+          <div style={{ textAlign: 'center', marginBottom: 20 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/fireworks.gif"
+              alt="celebration"
+              style={{ maxHeight: 200, objectFit: 'contain', borderRadius: 12 }}
+            />
+            <div style={{ marginTop: 10, fontWeight: 600 }}>All habits complete! 🔥</div>
+            <button style={filterBtn} onClick={() => setShowCelebration(false)}>
+              Done celebrating 🙂
+            </button>
+          </div>
+        )}
+
+        {/* ADD HABIT */}
+        <div style={{ marginTop: 10 }}>
+          <input
+            style={input}
+            placeholder="New habit"
+            value={newHabit}
+            onChange={(e) => setNewHabit(e.target.value)}
+          />
+
+          <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <select
+              style={smallInput}
+              value={frequencyType}
+              onChange={(e) => setFrequencyType(e.target.value)}
+            >
+              <option value="daily">Daily</option>
+              <option value="interval">Every X Days</option>
+              <option value="weekly">Specific Day</option>
+            </select>
+            <button style={addBtn} onClick={addHabit}>
+              +
+            </button>
+          </div>
+
+          {frequencyType === 'interval' && (
+            <div style={{ marginTop: 8 }}>
+              <input
+                style={smallInput}
+                type="number"
+                min="1"
+                value={intervalDays}
+                onChange={(e) => setIntervalDays(Number(e.target.value))}
+              />
+              <span style={{ marginLeft: 6 }}>days</span>
+            </div>
+          )}
+
+          {frequencyType === 'weekly' && (
+            <div style={{ marginTop: 8 }}>
+              <select
+                style={smallInput}
+                value={habitWeekday}
+                onChange={(e) => setHabitWeekday(Number(e.target.value))}
+              >
+                {WEEKDAYS_LONG.map((d, i) => (
+                  <option key={d} value={i}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        {/* LIST */}
+        <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          {sortedHabits.map((habit) => {
+            const done = isCompleted(habit.id)
+            return (
+              <div
+                key={habit.id}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 10px',
+                  borderRadius: 9,
+                  background: done ? '#dcfce7' : '#f3f4f6',
+                  border: '1px solid #e5e7eb',
+                  flex: '0 0 auto',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={done}
+                  onChange={() => toggleHabit(habit.id)}
+                  style={{ transform: 'scale(1.2)' }}
+                />
+                <span style={{ textDecoration: done ? 'line-through' : 'none' }}>
+                  {habit.name || ''}
+                </span>
+                <span style={{ fontSize: 11, color: '#6b7280' }}>
+                  {habitFrequencyLabel(habit)}
+                </span>
+                <button
+                  onClick={() => {
+                    if (confirm('Delete this habit?')) deleteHabit(habit.id)
+                  }}
+                  style={habitDeleteBtn}
+                >
+                  ×
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
 }
-const headerStyle = (color: string) => ({
+
+/* =========================================================================
+   SEARCH NOTES
+   ========================================================================= */
+
+function NotesSearchCard() {
+  const [date, setDate] = useState('')
+  const [tag, setTag] = useState('')
+  const [keyword, setKeyword] = useState('')
+  const [taskId, setTaskId] = useState('')
+  const [results, setResults] = useState<any[]>([])
+  const [error, setError] = useState('')
+
+  const search = async () => {
+    let query = supabase
+      .from('dailynotes')
+      .select('*')
+      .order('date', { ascending: false })
+
+    if (date.trim()) query = query.eq('date', date.trim())
+    if (tag.trim()) query = query.ilike('tag', `%${tag.trim()}%`)
+    if (keyword.trim()) query = query.ilike('note', `%${keyword.trim()}%`)
+    if (taskId.trim()) query = query.eq('task_id', taskId.trim())
+
+    const { data, error } = await query
+    setError(error ? error.message : '')
+    setResults(data || [])
+  }
+
+  return (
+    <div style={card}>
+      <div style={headerStyle('#6366f1')}>Search Notes</div>
+
+      <div style={{ padding: 12 }}>
+        <div style={wrapRow}>
+          <input
+            style={smallInput}
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+          <input
+            style={smallInput}
+            placeholder="tag"
+            value={tag}
+            onChange={(e) => setTag(e.target.value)}
+          />
+          <input
+            style={input}
+            placeholder="keyword"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+          />
+          <input
+            style={smallInput}
+            placeholder="task #"
+            value={taskId}
+            onChange={(e) => setTaskId(e.target.value)}
+          />
+          <button style={filterBtn} onClick={search}>
+            Search
+          </button>
+        </div>
+
+        <div style={{ marginTop: 15 }}>
+          {error && <div style={{ color: '#dc2626' }}>Error: {error}</div>}
+          {!error && results.length === 0 && <div>No results</div>}
+
+          {results.map((n) => (
+            <div key={n.id} style={taskRow}>
+              <div style={{ width: 90 }}>
+                {n.date ? parseLocalDate(n.date).toLocaleDateString() : ''}
+              </div>
+              <div style={{ flex: 1, display: 'flex', gap: 8 }}>
+                <div>{n.note}</div>
+                {n.tag && <span style={tagPill}>#{n.tag}</span>}
+                {n.task_id && (
+                  <span style={{ fontSize: 11, color: '#555' }}>task:{n.task_id}</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* =========================================================================
+   EXPORT DAILY RECAP
+   Completed tasks, new tasks, notes, day rating and intention for a date
+   range, as one Markdown recap to download or copy into the daily log.
+   ========================================================================= */
+
+function RecapExportCard() {
+  const [startDate, setStartDate] = useState(getTodayStr())
+  const [endDate, setEndDate] = useState(getTodayStr())
+  const [preview, setPreview] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const buildRecap = async () => {
+    setBusy(true)
+    setMsg('')
+
+    // local-day window for created_at (timestamp) filtering
+    const rangeStart = parseLocalDate(startDate)
+    const rangeEnd = parseLocalDate(endDate)
+    rangeEnd.setDate(rangeEnd.getDate() + 1)
+
+    const [doneRes, newRes, notesRes, ratingsRes, intentRes] = await Promise.all([
+      supabase
+        .from('tasks')
+        .select('*')
+        .eq('completed', true)
+        .gte('comp_date', startDate)
+        .lte('comp_date', endDate)
+        .order('comp_date'),
+      supabase
+        .from('tasks')
+        .select('*')
+        .is('parent_id', null) // skip auto-generated recurring copies
+        .gte('created_at', rangeStart.toISOString())
+        .lt('created_at', rangeEnd.toISOString())
+        .order('created_at'),
+      supabase
+        .from('dailynotes')
+        .select('*')
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('created_at'),
+      supabase
+        .from('day_ratings')
+        .select('*')
+        .gte('rating_date', startDate)
+        .lte('rating_date', endDate),
+      supabase
+        .from('intentions')
+        .select('*')
+        .gte('date', startDate)
+        .lte('date', endDate),
+    ])
+
+    const err =
+      doneRes.error || newRes.error || notesRes.error || ratingsRes.error || intentRes.error
+    if (err) {
+      setBusy(false)
+      setMsg('Error: ' + err.message)
+      return ''
+    }
+
+    const done: any[] = doneRes.data || []
+    const added: any[] = (newRes.data || []).map((t: any) => ({
+      ...t,
+      added_date: toDateStr(new Date(t.created_at)),
+    }))
+    const notes: any[] = notesRes.data || []
+    const ratings: any[] = ratingsRes.data || []
+    const intents: any[] = intentRes.data || []
+
+    // every date in range that has something
+    const dates = Array.from(
+      new Set([
+        ...done.map((t) => t.comp_date),
+        ...added.map((t) => t.added_date),
+        ...notes.map((n) => n.date),
+        ...ratings.map((r) => r.rating_date),
+        ...intents.map((i) => i.date),
+      ])
+    )
+      .filter(Boolean)
+      .sort()
+
+    const range = startDate === endDate ? startDate : `${startDate} to ${endDate}`
+    let md = `# Daily Recap: ${range}\n`
+
+    if (dates.length === 0) {
+      md += `\n_No tasks done or added, and no notes, rating or intention recorded._\n`
+    }
+
+    for (const d of dates) {
+      md += `\n## ${formatLongDay(d)}\n`
+
+      const intent = intents.find((i) => i.date === d)
+      if (intent?.intention) {
+        md += `\n### Intention\n${intent.intention.trim()}\n`
+      }
+
+      const dayDone = done.filter((t) => t.comp_date === d)
+      md += `\n### Tasks Done (${dayDone.length})\n`
+      if (dayDone.length === 0) md += `- none\n`
+      dayDone.forEach((t) => {
+        const extras = [t.priority, t.status].filter(Boolean).join(', ')
+        md += `- #${t.id} ${t.title}${extras ? ` (${extras})` : ''}\n`
+      })
+
+      const dayAdded = added.filter((t) => t.added_date === d)
+      md += `\n### New Tasks Added (${dayAdded.length})\n`
+      if (dayAdded.length === 0) md += `- none\n`
+      dayAdded.forEach((t) => {
+        const extras = [
+          t.priority,
+          t.status,
+          t.due_date ? `due ${t.due_date}` : '',
+          t.frequency_type && t.frequency_type !== 'once' ? t.frequency_type : '',
+          t.completed ? 'done' : '',
+        ]
+          .filter(Boolean)
+          .join(', ')
+        md += `- #${t.id} ${t.title}${extras ? ` (${extras})` : ''}\n`
+      })
+
+      const dayNotes = notes.filter((n) => n.date === d)
+      if (dayNotes.length > 0) {
+        md += `\n### Notes\n`
+        dayNotes.forEach((n) => {
+          const text = String(n.note || '').trim().replace(/\n+/g, ' ')
+          md += `- ${text}${n.tag ? ` #${n.tag}` : ''}\n`
+        })
+      }
+
+      const r = ratings.find((x) => x.rating_date === d)
+      if (r) {
+        md += `\n### Day Rating: ${r.rating ?? '-'}/10\n`
+        if (r.what_went_well) md += `What went well: ${r.what_went_well.trim()}\n`
+      }
+    }
+
+    setPreview(md)
+    setBusy(false)
+    return md
+  }
+
+  const download = async () => {
+    const md = await buildRecap()
+    if (!md) return
+
+    const name =
+      startDate === endDate ? `recap-${startDate}.md` : `recap-${startDate}_to_${endDate}.md`
+    const url = URL.createObjectURL(new Blob([md], { type: 'text/markdown' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    setMsg('Downloaded ' + name)
+  }
+
+  const copy = async () => {
+    const md = await buildRecap()
+    if (!md) return
+    try {
+      await navigator.clipboard.writeText(md)
+      setMsg('Copied to clipboard')
+    } catch {
+      setMsg('Copy blocked. Select the preview text and copy it.')
+    }
+  }
+
+  return (
+    <div style={card}>
+      <div style={headerStyle('#0f766e')}>Export Daily Recap</div>
+
+      <div style={{ padding: 12 }}>
+        <div style={{ ...row, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input
+            style={smallInput}
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+          />
+          <input
+            style={smallInput}
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+          />
+          <button style={{ ...filterBtn, marginTop: 0 }} onClick={buildRecap} disabled={busy}>
+            Preview
+          </button>
+          <button
+            style={{ ...filterBtn, marginTop: 0, background: '#0f766e' }}
+            onClick={download}
+            disabled={busy}
+          >
+            Download .md
+          </button>
+          <button
+            style={{ ...filterBtn, marginTop: 0, background: '#475569' }}
+            onClick={copy}
+            disabled={busy}
+          >
+            Copy
+          </button>
+        </div>
+
+        {msg && <div style={{ marginTop: 8, fontSize: 13, color: '#0f766e' }}>{msg}</div>}
+
+        {preview && (
+          <textarea
+            readOnly
+            value={preview}
+            style={{
+              ...textarea(260),
+              marginTop: 10,
+              fontFamily: 'ui-monospace, Menlo, monospace',
+              fontSize: 13,
+            }}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* =========================================================================
+   STYLES
+   ========================================================================= */
+
+const styles: Record<string, CSSProperties> = {
+  page: {
+    background: '#e5e7eb',
+    minHeight: '100vh',
+    display: 'flex',
+    justifyContent: 'center',
+    paddingTop: 40,
+    color: '#d01880',
+  },
+  container: {
+    background: '#f3f4f6',
+    padding: 20,
+    width: '100%',
+    maxWidth: 1100,
+    margin: '0 auto',
+    color: '#c21313',
+  },
+  title: {
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  cards: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: 20,
+  },
+}
+
+/** grid cell spanning n of the 3 columns */
+const span = (n: 1 | 2 | 3): CSSProperties => ({ gridColumn: `span ${n}`, marginBottom: 20 })
+
+const headerStyle = (color: string): CSSProperties => ({
   background: color,
   color: 'white',
   padding: '10px 12px',
@@ -91,6 +1862,150 @@ const headerStyle = (color: string) => ({
   borderTopRightRadius: 12,
   fontWeight: 600,
 })
+
+const card: CSSProperties = {
+  border: '1px solid #ddd',
+  borderRadius: 12,
+  background: '#fff',
+  overflow: 'hidden',
+  boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
+}
+
+const section: CSSProperties = { padding: '12px 16px' }
+
+const row: CSSProperties = { display: 'flex', gap: 8, marginTop: 10 }
+
+const wrapRow: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 6,
+  alignItems: 'center',
+}
+
+const input: CSSProperties = {
+  flex: 1,
+  padding: 8,
+  borderRadius: 6,
+  border: '1px solid #ccc',
+}
+
+const smallInput: CSSProperties = {
+  width: 120,
+  padding: 8,
+  borderRadius: 6,
+  border: '1px solid #ccc',
+}
+
+const cellInput: CSSProperties = {
+  width: '100%',
+  padding: '4px 6px',
+  border: '1px solid #d1d5db',
+  borderRadius: 4,
+  boxSizing: 'border-box',
+}
+
+const textarea = (height: number): CSSProperties => ({
+  width: '100%',
+  height,
+  padding: 10,
+  borderRadius: 8,
+  border: '1px solid #ccc',
+  resize: 'vertical',
+})
+
+const fieldLabel: CSSProperties = { marginBottom: 6, fontWeight: 500 }
+
+const dailyTextBody: CSSProperties = {
+  height: 200,
+  padding: 16,
+  fontStyle: 'italic',
+  fontSize: 15,
+  lineHeight: 1.5,
+  textAlign: 'center',
+}
+
+const taskRow: CSSProperties = {
+  display: 'flex',
+  gap: 10,
+  padding: 8,
+  border: '1px solid #eee',
+  borderRadius: 6,
+  marginTop: 6,
+}
+
+const tagPill: CSSProperties = {
+  background: '#f3e8ff',
+  color: '#9333ea',
+  padding: '2px 6px',
+  borderRadius: 12,
+  fontSize: 10,
+}
+
+const addBtn: CSSProperties = {
+  background: '#22c55e',
+  color: 'white',
+  border: 'none',
+  padding: '0 12px',
+  borderRadius: 6,
+}
+
+const filterBtn: CSSProperties = {
+  background: '#3b82f6',
+  color: 'white',
+  border: 'none',
+  padding: '8px 12px',
+  borderRadius: 6,
+  marginTop: 10,
+}
+
+const editBtn: CSSProperties = {
+  padding: '4px 8px',
+  borderRadius: 4,
+  border: 'none',
+  cursor: 'pointer',
+  fontSize: 12,
+  color: 'white',
+}
+
+const deleteBtn: CSSProperties = {
+  background: '#ef4444',
+  color: 'white',
+  border: 'none',
+  padding: '4px 8px',
+  borderRadius: 6,
+  cursor: 'pointer',
+}
+
+const toggleBtn: CSSProperties = {
+  marginTop: 10,
+  marginBottom: 8,
+  padding: '4px 8px',
+  borderRadius: 4,
+  border: '1px solid #e5e7eb',
+  background: 'white',
+  cursor: 'pointer',
+  fontSize: 12,
+}
+
+const habitDeleteBtn: CSSProperties = {
+  marginLeft: 6,
+  width: 18,
+  height: 18,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  background: '#000000',
+  color: 'white',
+  border: 'none',
+  borderRadius: 4,
+  cursor: 'pointer',
+  fontSize: 12,
+  lineHeight: 1,
+}
+
+/* =========================================================================
+   DATA
+   ========================================================================= */
 
 const quotes = [
 "Bitterness is like a cancer that enters the soul.— Sir Terry Waite",
@@ -558,2500 +2473,3 @@ const affirmations = [
 "I am confident in my ability to achieve my goals.",
 "I am worthy of success, love, and happiness."
 ]
-
-
-// TYPES
-type Task = {
-  id: string
-  title: string
-  due_date: string | null
-  status: string | null
-  completed: boolean
-  comp_date: string | null
-   priority?: string | null  
-}
-
-// MAIN PAGE
-export default function Home() {
-
-
-
-  return (
-    <div style={styles.page}>
-      <div style={styles.container}>
-        <h1 style={styles.title}>Task App</h1>
-
-
-
-
-
-       <div style={styles.cards}>
-
-
-  <div style={{ ...oneThird, marginBottom: 20}}>
-<AffirmationCard />
-</div>
-
-<div style={{ ...aThird, marginBottom: 20 }}>
-<QuoteCard />
-</div>
-
-  <div style={{ ...twoThirds, marginBottom: 20 }}>
-    <TasksCard />
-  </div>
-<div style={{ ...twoThirds, marginBottom: 20 }}>
-  <NotesCard />
-  </div>
-  <div style={{ ...twoThirds, marginBottom: 20 }}>
-  <IntentionsCard /></div>
-  <div style={{ ...twoThirds, marginBottom: 20 }}>
-  <DayRatingCard />
-</div>
-<div style={{ ...twoThirds, marginBottom: 20 }}>
-   
-    <CompletedTasksCard />
-  </div>
-  <div style={{ ...twoThirds, marginBottom: 20 }}>
-      <ProjectsCard />
-</div>
-         <div style={{ ...twoThirds, marginBottom: 20 }}>
-  <IdeasCard />
-</div>
-
-<div style={{ ...twoThirds, marginBottom: 20 }}>
-<HabitsCard />
-</div>  
-<div style={{ ...twoThirds, marginBottom: 20 }}>
-  <NotesSearchCard />
-</div>
-<div style={{ ...twoThirds, marginBottom: 20 }}>
-  <RecapExportCard />
-</div>
-
-
-</div>
-
-      </div>
-    </div>
-  )
-}
-const isTaskDueToday = (task: any) => {
-  const today = new Date()
-  const todayStr = getTodayStr()
-
-  // ✅ DAILY
-  if (task.frequency_type === 'daily') return true
-
-  // ✅ WEEKLY
-  if (task.frequency_type === 'weekly') {
-    return task.weekday === today.getDay()
-  }
-
-  // ✅ MONTHLY (FIXED)
-  if (task.frequency_type === 'monthly') {
-    if (!task.due_date) return false
-    return today.getDate() === new Date(task.due_date).getDate()
-  }
-
-  // ✅ INTERVAL (FIXED)
-  if (task.frequency_type === 'interval') {
-    if (!task.due_date || !task.interval_days) return false
-
-    const start = new Date(task.due_date)
-    const diff = Math.floor(
-      (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
-    )
-
-    return diff >= 0 && diff % task.interval_days === 0
-  }
-
-  return false
-}
-const isTaskDueOnDate = (task: any, date: Date) => {
-  const day = date.getDay()
-
-  if (task.frequency_type === 'daily') return true
-
-  if (task.frequency_type === 'weekly') {
-    return task.weekday === day
-  }
-
-  if (task.frequency_type === 'monthly') {
-    return date.getDate() === new Date(task.due_date).getDate()
-  }
-
-  if (task.frequency_type === 'interval') {
-    const start = new Date(task.due_date)
-    const diff = Math.floor(
-      (date.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
-    )
-    return diff >= 0 && diff % task.interval_days === 0
-  }
-
-  return false
-}
-
-const generateRecurringTasks = async () => {
-  console.log('RUNNING TASK GENERATOR')
-
-  const today = new Date()
-  const todayStr = getTodayStr()
-
-  const { data: tasks } = await supabase
-    .from('tasks')
-    .select('*')
-
-  if (!tasks) return
-
-for (const task of tasks) {
-
-  
-  const today = getTodayStr()
-
-  // ✅ ONLY templates
-  if (task.parent_id) continue
-  
-  // ✅ ONLY recurring
-  if (!task.frequency_type || task.frequency_type === 'once') continue
-
-  // ✅ Check if due today
-  let isDue = false
-
-  if (task.frequency_type === 'daily') {
-    
-    isDue = true
-  }
-
-  if (task.frequency_type === 'weekly') {
-    const todayDay = new Date().getDay()
-    const taskDay = new Date(task.due_date).getDay()
-    isDue = todayDay === taskDay
-  }
-
-  if (task.frequency_type === 'monthly') {
-  const todayDate = new Date().getDate()
-  const taskDate = new Date(task.due_date).getDate()
-
-  isDue = todayDate === taskDate
-}
-
-if (task.frequency_type === 'interval') {
-const toDateOnly = (d: Date) =>
-  new Date(d.getFullYear(), d.getMonth(), d.getDate())
-
-const todayDate = toDateOnly(new Date())
-const start = toDateOnly(new Date(task.due_date))
-
-const diff = Math.floor(
-  (todayDate.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
-)
-   if (diff < 0) continue   // 🚨 CRITICAL FIX
-  isDue = diff % task.interval_days === 0
- 
- console.log('START DATE RAW:', task.due_date)
-}
-console.log('FINAL DUE CHECK:', task.title, isDue)
-  if (!isDue) continue
-console.log('pass due check:', today)
-  // ✅ Check if already exists for today
-  const { data: existing } = await supabase
-    .from('tasks')
-    .select('id')
-    .eq('parent_id', task.id)
-    .eq('due_date', today)
-
-  if (existing && existing.length > 0) continue
-
-  // ✅ Create today's instance
-  console.log('ABOUT TO CREATE:', task.title)
-  await supabase.from('tasks').insert([
-    {
-      title: task.title,
-      due_date: today,
-      status: task.status,
-      completed: false,
-      parent_id: task.id,      // 🔑 link to template
-      frequency_type: 'once'   // instance is NOT recurring
-    }
-    
-  ])
-
-  console.log('CREATED:', task.title)
-
-  }
-  
-}
-// TASKS CARD
-function TasksCard() {
-  const [priority, setPriority] = useState('')
-const [editPriority, setEditPriority] = useState('')
-  const [frequencyType, setFrequencyType] = useState('once')
-const [intervalDays, setIntervalDays] = useState(3)
-const [weekday, setWeekday] = useState(1)
-  const [title, setTitle] = useState('')
-  const [dueDate, setDueDate] = useState('')
-  const [status, setStatus] = useState('')
-  const [tasks, setTasks] = useState<Task[]>([])
- const [startDate, setStartDate] = useState(DEFAULT_START)
-const [endDate, setEndDate] = useState(getTomorrowStr())
-  // EDIT STATE
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editTitle, setEditTitle] = useState('')
-  const [editStatus, setEditStatus] = useState('')
-  const [editDueDate, setEditDueDate] = useState('')
-
-  // FETCH TASKS
-  const fetchTasks = async () => {
-    let query = supabase
-  .from('tasks')
-  .select('*')
-  .eq('completed', false)   // ✅ ONLY open tasks
-  .order('due_date')
-
-    if (startDate) query = query.gte('due_date', startDate)
-    if (endDate) query = query.lte('due_date', endDate)
-
-    const { data } = await query
-    if (data) setTasks(data)
-  }
-  useEffect(() => {
-  const run = async () => {
-    const today = getTodayStr()
-
-    const lastRun = localStorage.getItem('tasks_generated_date')
-
-   // if (lastRun === today) {
-      // already ran today → just fetch
-  //    fetchTasks()
-   //   return
-  //  }
-
-    // run generator
-    await generateRecurringTasks()
-
-    // save that we ran today
-    localStorage.setItem('tasks_generated_date', today)
-
-    // refresh UI
-    fetchTasks()
-  }
-
-  run()
-}, [])
-
-  // ADD
-  const addTask = async () => {
-    if (!title) return
-
-  await supabase.from('tasks').insert([
-  {
-    title,
-    due_date: dueDate || null,
-    status,
-    frequency_type: frequencyType,
-    interval_days: frequencyType === 'interval' ? intervalDays : null,
-    weekday: frequencyType === 'weekly' ? weekday : null,
-    priority,   // 👈 added
-  }
-])
-
-    setTitle('')
-    setDueDate('')
-    setStatus('')
-    fetchTasks()
-  }
-
- const isTaskDueToday = (task: any) => {
-  const today = new Date()
-  const day = today.getDay()
-
-  // ONE-TIME
-  if (task.frequency_type === 'once') {
-    return !task.completed
-  }
-
-  // DAILY
-  if (task.frequency_type === 'daily') {
-    return task.comp_date !== getTodayStr()
-  }
-
-  // WEEKLY
-  if (task.frequency_type === 'weekly') {
-    return task.weekday === day && task.comp_date !== getTodayStr()
-  }
-
-  // INTERVAL
-  if (task.frequency_type === 'interval') {
-    const start = new Date(task.created_at)
-    const diff = Math.floor(
-      (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
-    )
-    return diff % task.interval_days === 0 && task.comp_date !== getTodayStr()
-  }
-
-  return false
-}
-  // COMPLETE
-const toggleComplete = async (task: Task) => {
-  const isCompleting = !task.completed
-
-  await supabase
-    .from('tasks')
-    .update({
-      completed: isCompleting,
-      comp_date: isCompleting
-        ? getTodayStr() // ✅ store date only
-        : null,
-    })
-    .eq('id', task.id)
-
-  fetchTasks()           // refresh open tasks
-  window.location.reload()
-  // we'll also refresh completed below
-}
-  // EDIT
-  const startEdit = (task: Task) => {
-    setEditingId(task.id)
-    setEditTitle(task.title)
-    setEditStatus(task.status || '')
-    setEditDueDate(task.due_date || '')
-    setEditPriority(task.priority || '')
-  }
-
-  const saveEdit = async (id: string) => {
-    await supabase
-      .from('tasks')
-      .update({
-        title: editTitle,
-        status: editStatus,
-        due_date: editDueDate || null,
-
-    priority: editPriority,   // 👈 ADD THIS
-
-
-      })
-      .eq('id', id)
-
-    setEditingId(null)
-    fetchTasks()
-  }
-
-  return (
-    <div style={card}>
-      
-        <div style={headerStyle('#16a34a')}>Tasks
-       
-          
-          </div>
-    
-      {/* ADD */}
-      <div style={{ padding: '12px 16px' }}>
-     <div
-  style={{
-    display: 'flex',
-    flexWrap: 'wrap',   // 🔥 allows wrapping ONLY when needed
-    gap: 6,
-    alignItems: 'center',
-  }}
->
-        <input
-          style={input}
-          placeholder="Task title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-        <input
-          style={smallInput}
-          type="date"
-          value={dueDate}
-          onChange={(e) => setDueDate(e.target.value)}
-        />
-        <input
-          style={smallInput}
-          placeholder="Status"
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-        />
-        <select
-  value={priority}
-  onChange={(e) => setPriority(e.target.value)}
-  style={smallInput}
->
-  <option value="">Priority</option>
-  <option value="high">High</option>
-  <option value="medium">Medium</option>
-  <option value="low">Low</option>
-</select>
-        <select
-  value={frequencyType}
-  onChange={(e) => setFrequencyType(e.target.value)}
-  style={smallInput}
->
-  <option value="once">One-time</option>
-  <option value="daily">Daily</option>
-  <option value="weekly">Weekly</option>
-  <option value="monthly">Monthly</option>
-  <option value="interval">Every X days</option>
-</select>
-{frequencyType === 'interval' && (
-  <input
-    type="number"
-    value={intervalDays}
-    onChange={(e) => setIntervalDays(Number(e.target.value))}
-    style={smallInput}
-  />
-)}
-
-{frequencyType === 'weekly' && (
-  <select
-    value={weekday}
-    onChange={(e) => setWeekday(Number(e.target.value))}
-    style={smallInput}
-  >
-    <option value={0}>Sun</option>
-    <option value={1}>Mon</option>
-    <option value={2}>Tue</option>
-    <option value={3}>Wed</option>
-    <option value={4}>Thu</option>
-    <option value={5}>Fri</option>
-    <option value={6}>Sat</option>
-  </select>
-)}
-        <button style={addBtn} onClick={addTask}>+</button>
-      </div></div>
-
-
-
-      {/* FILTER */}
-       <div style={{ padding: '12px 16px' }}>
-      <div style={row}>
-        <input
-          style={smallInput}
-          type="date"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-        />
-        <input
-          style={smallInput}
-          type="date"
-          value={endDate}
-          onChange={(e) => setEndDate(e.target.value)}
-        />
-        <button style={filterBtn} onClick={fetchTasks}>Filter</button>
-      </div>
-      </div>
-
-      {/* LIST */}
-      <div style={{ marginTop: 10 }}>
-        {tasks?.map((task) => (
-          <div key={task.id} style={taskRow}>
-            <input
-              type="checkbox"
-               style={{ transform: 'scale(2)', cursor: 'pointer' }}
-              checked={task.completed}
-              onChange={() => toggleComplete(task)}
-            />
-
-
-
-
-
-            
-
-            {editingId === task.id ? (
-              <>
-                <input
-                  style={input}
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                />
-                <input
-                  style={smallInput}
-                  type="date"
-                  value={editDueDate}
-                  onChange={(e) => setEditDueDate(e.target.value)}
-                />
-                <input
-                  style={smallInput}
-                  value={editStatus}
-                  onChange={(e) => setEditStatus(e.target.value)}
-                />
-                <select
-  value={editPriority}
-  onChange={(e) => setEditPriority(e.target.value)}
-  style={smallInput}
->
-  <option value="high">High</option>
-  <option value="medium">Medium</option>
-  <option value="low">Low</option>
-</select>
-                <button style={filterBtn} onClick={() => saveEdit(task.id)}>
-                  Save
-                </button>
-              </>
-            ) : (
-              <>
-               <span style={{ flex: 2, display: 'flex', gap: 8, alignItems: 'center' }}>
-  <strong>#{task.id}</strong>
-  <strong>{task.title}</strong>
-</span>
-<span
-  style={{
-    width: 70,
-    fontWeight: 500,
-    color:
-      task.priority === 'high'
-        ? '#dc2626'
-        : task.priority === 'medium'
-        ? '#d97706'
-        : task.priority === 'low'
-        ? '#16a34a'
-        : '#6b7280',
-  }}
->
-  {task.priority || '-'}
-</span>
-                <span style={{ flex: 1 }}>{task.due_date || '-'}</span>
-                <span style={{ flex: 1 }}>{task.status || '-'}</span>
-
-
-                
-
-               <button
-  onClick={() => startEdit(task)}
-  style={{
-    padding: '4px 8px',
-    borderRadius: 4,
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: 12,
-    color: 'white',
-
-    background:
-      task?.priority === 'high'
-        ? '#dc2626'   // red
-        : task?.priority === 'medium'
-        ? '#f59e0b'   // yellow
-        : task?.priority === 'low'
-        ? '#16a34a'   // green
-        : '#6b7280',  // gray (none)
-  }}
->
-  Edit
-</button>
-              </>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-    
-  )
-}
-
-// NOTES
-function NotesCard() {
-  const [notes, setNotes] = useState<any[]>([])
-  const [tag, setTag] = useState('')
-  const [noteDate, setNoteDate] = useState( getTodayStr()  )
-  const [note, setNote] = useState('')
-
-  const fetchNote = async (date: string) => {
-  const { data } = await supabase
-    .from('dailynotes')
-    .select('*')
-    .eq('date', date)
-    .order('created_at', { ascending: false })
-
-  if (data) {
-    setNotes(data)   // 👈 store ARRAY now
-  } else {
-    setNotes([])
-  }
-}
-
-  useEffect(() => {
-    fetchNote(noteDate)
-  }, [noteDate])
-
-const saveNote = async () => {
-  if (!note) return
-
-  const { data, error } = await supabase
-    .from('dailynotes')
-    .insert([
-      {
-        date: noteDate,
-        note: note,
-        tag: tag
-      }
-    ])
-
-  console.log('SAVE:', { data, error })
-
-  if (error) {
-    alert(error.message)
-  } else {
-    setNote('')
-    setTag('')
-    fetchNote(noteDate)
-  }
-}
-
-  return (
-   <div style={card}>
-  <div style={headerStyle('#9333ea')}>Notes</div>
-
-  <div style={{ padding: 12 }}>
-    {/* DATE AT TOP */}
-    <div style={{ marginBottom: 10 }}>
-      <input
-        style={smallInput}
-        type="date"
-        value={noteDate}
-        onChange={(e) => setNoteDate(e.target.value)}
-      />
-       <input
-    style={smallInput}
-    value={tag}
-    onChange={(e) => setTag(e.target.value)}
-    placeholder="tag"
-  />
-    </div>
-
-    {/* FULL WIDTH TEXT AREA */}
-    <textarea
-      style={{
-        width: '100%',
-        height: 50,
-        padding: 10,
-        borderRadius: 8,
-        border: '1px solid #ccc',
-        resize: 'vertical',
-      }}
-      value={note}
-      onChange={(e) => setNote(e.target.value)}
-      placeholder="Write your notes..."
-    />
-    {notes?.map((n) => (
-  <div key={n.id} style={{ marginTop: 10 }}>
-    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-  <div>{n.note}</div>
-
-  {n.tag && (
-    <div style={{ fontSize: 12, color: '#9333ea' }}>
-      #{n.tag}
-    </div>
-  )}
-</div>
-  </div>
-))}
-
-    <button style={filterBtn} onClick={saveNote}>
-      Save
-    </button>
-  </div>
-</div>
-  )
-}
-function ProjectsCard() {
-  const [projects, setProjects] = useState<any[]>([])
-  const [showCompleted, setShowCompleted] = useState(true)
-
-  const [name, setName] = useState('')
-  const [dueDate, setDueDate] = useState('')
-  const [nextStep, setNextStep] = useState('')
-  const [percent, setPercent] = useState(0)
-  const [atBat, setAtBat] = useState('')
-
-  const fetchProjects = async () => {
-    const { data } = await supabase
-      .from('projects')
-      .select('*')
-      .order('due_date')
-
-    if (data) setProjects(data)
-  }
-
-  useEffect(() => {
-    fetchProjects()
-  }, [])
-
-  const addProject = async () => {
-    if (!name) return
-
-    await supabase.from('projects').insert([
-      {
-        name,
-        due_date: dueDate || null,
-        next_step: nextStep,
-        percent_done: percent,
-        at_bat: atBat,
-      },
-    ])
-
-    setName('')
-    setDueDate('')
-    setNextStep('')
-    setPercent(0)
-    setAtBat('')
-
-    fetchProjects()
-  }
-const updateProjectField = async (
-  id: string,
-  field: string,
-  value: string | number
-) => {
-  const { error } = await supabase
-    .from('projects')
-    .update({
-      [field]: value,
-    })
-    .eq('id', id)
-
-  if (error) {
-    console.error('Error updating project:', error)
-    return
-  }
-
-  fetchProjects()
-}
-  return (
-    <div style={card}>
-      <div style={headerStyle('#0ea5e9')}>Projects</div>
-
-      <div style={{ padding: 12 }}>
-
-        {/* ADD */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <input
-            style={input}
-            placeholder="Project name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-
-          <input
-            style={smallInput}
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-          />
-
-          <input
-            style={input}
-            placeholder="Next step"
-            value={nextStep}
-            onChange={(e) => setNextStep(e.target.value)}
-          />
-
-          <input
-            style={smallInput}
-            type="number"
-            min={0}
-            max={100}
-            value={percent}
-            onChange={(e) => setPercent(Number(e.target.value))}
-            placeholder="% done"
-          />
-
-          <input
-            style={smallInput}
-            placeholder="Who’s at bat"
-            value={atBat}
-            onChange={(e) => setAtBat(e.target.value)}
-          />
-
-          <button style={addBtn} onClick={addProject}>
-            Add Project
-          </button>
-        </div>
-
-        {/* TOGGLE */}
-        <button
-          onClick={() => setShowCompleted((prev) => !prev)}
-          style={{
-            marginTop: 10,
-            marginBottom: 8,
-            padding: '4px 8px',
-            borderRadius: 4,
-            border: '1px solid #e5e7eb',
-            background: 'white',
-            cursor: 'pointer',
-            fontSize: 12,
-          }}
-        >
-          {showCompleted ? 'Hide Completed' : 'Show Completed'}
-        </button>
-
-        {/* LIST */}
-        <div style={{ marginTop: 12 }}>
-          {projects
-           .filter((p) => showCompleted || (p.percent_done ?? 0) < 100)
-            .map((p) => (
-              <div
-                key={p.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '6px 8px',
-                  borderBottom: '1px solid #e5e7eb',
-                  fontSize: 14,
-                  opacity: p.completed ? 0.5 : 1,
-                }}
-              >
-                {/* NAME */}
-                <div style={{ flex: 2, fontWeight: 500 }}>
-                  {p.name}
-                </div>
-
-                {/* DUE */}
-                <div style={{ width: 90, color: '#6b7280' }}>
-                  {p.due_date || '-'}
-                </div>
-                {/* NEXT STEP */}
-<div style={{ flex: 3 }}>
-  <input
-    value={p.next_step ?? ''}
-    onChange={(e) => {
-      const value = e.target.value
-
-      setProjects((current) =>
-        current.map((project) =>
-          project.id === p.id
-            ? { ...project, next_step: value }
-            : project
-        )
-      )
-    }}
-    onBlur={(e) =>
-      updateProjectField(
-        p.id,
-        'next_step',
-        e.target.value
-      )
-    }
-    style={{
-      width: '100%',
-      padding: '4px 6px',
-      border: '1px solid #d1d5db',
-      borderRadius: 4,
-      boxSizing: 'border-box',
-    }}
-  />
-</div>
-
-{/* % DONE */}
-<div
-  style={{
-    display: 'flex',
-    alignItems: 'center',
-    gap: 3,
-    width: 80,
-  }}
->
-  <input
-    type="number"
-    min={0}
-    max={100}
-    value={p.percent_done ?? 0}
-    onChange={(e) => {
-      const value = Number(e.target.value)
-
-      setProjects((current) =>
-        current.map((project) =>
-          project.id === p.id
-            ? { ...project, percent_done: value }
-            : project
-        )
-      )
-    }}
-    onBlur={(e) =>
-      updateProjectField(
-        p.id,
-        'percent_done',
-        Math.min(100, Math.max(0, Number(e.target.value)))
-      )
-    }
-    style={{
-      width: 50,
-      padding: '4px',
-      border: '1px solid #d1d5db',
-      borderRadius: 4,
-      textAlign: 'right',
-    }}
-  />
-
-  <span>%</span>
-</div>
-
-{/* WHO'S AT BAT */}
-<div style={{ width: 120 }}>
-  <input
-    value={p.at_bat ?? ''}
-    onChange={(e) => {
-      const value = e.target.value
-
-      setProjects((current) =>
-        current.map((project) =>
-          project.id === p.id
-            ? { ...project, at_bat: value }
-            : project
-        )
-      )
-    }}
-    onBlur={(e) =>
-      updateProjectField(
-        p.id,
-        'at_bat',
-        e.target.value
-      )
-    }
-    style={{
-      width: '100%',
-      padding: '4px 6px',
-      border: '1px solid #d1d5db',
-      borderRadius: 4,
-      boxSizing: 'border-box',
-    }}
-  />
-</div>
-
-                    </div>
-            ))}
-        </div>
-
-      </div>
-    </div>
-  )
-}
-
-function IdeasCard() {
-  const [ideas, setIdeas] = useState<any[]>([])
-  const [name, setName] = useState('')
-  const [category, setCategory] = useState('')
-  const [note, setNote] = useState('')
-  const [filter, setFilter] = useState('all')
-
-  const fetchIdeas = async () => {
-    const { data } = await supabase
-      .from('ideas')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (data) setIdeas(data)
-  }
-
-  useEffect(() => {
-    fetchIdeas()
-  }, [])
-
-  const addIdea = async () => {
-    if (!name) return
-
-    await supabase.from('ideas').insert([
-      {
-        name,
-        category,
-        note,
-      },
-    ])
-
-    setName('')
-    setCategory('')
-    setNote('')
-    fetchIdeas()
-  }
-
-  const deleteIdea = async (id: string) => {
-    await supabase.from('ideas').delete().eq('id', id)
-    fetchIdeas()
-  }
-
-  const filtered =
-    filter === 'all'
-      ? ideas
-      : ideas.filter(
-          (i) => (i.category || '').toLowerCase() === filter
-        )
-
-  return (
-    <div style={card}>
-      <div style={headerStyle('#f59e0b')}>Ideas</div>
-
-      <div style={{ padding: 12 }}>
-        {/* ADD */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <input
-            style={input}
-            placeholder="Idea"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
- 
-        <select
-  value={category}
-  onChange={(e) => setCategory(e.target.value)}
-  style={smallInput}
->
-  <option value="">Category</option>
-  <option value="restaurant">Restaurant</option>
-  <option value="gift">Gift</option>
-  <option value="book">Book</option>
-            <option value="movie">Movie</option>
-</select>
-
-          <input
-            style={input}
-            placeholder="Notes"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-          />
-
-          <button style={addBtn} onClick={addIdea}>
-            Add Idea
-          </button>
-        </div>
-
-        {/* FILTERS */}
-        <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
-          {['all', 'restaurant', 'gift', 'book', 'movie'].map((c) => (
-            <button
-              key={c}
-              onClick={() => setFilter(c)}
-              style={{
-                fontSize: 12,
-                padding: '4px 6px',
-                border: '1px solid #ddd',
-                borderRadius: 4,
-                background: filter === c ? '#f59e0b' : 'white',
-                color: filter === c ? 'white' : 'black',
-              }}
-            >
-              {c}
-            </button>
-          ))}
-        </div>
-
-        {/* LIST */}
-        <div style={{ marginTop: 12 }}>
-          {filtered.map((i) => (
-            <div
-              key={i.id}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '6px 8px',
-                borderBottom: '1px solid #eee',
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 500 }}>{i.name}</div>
-                <div style={{ fontSize: 12, color: '#6b7280' }}>
-                  {i.category} {i.note && `• ${i.note}`}
-                </div>
-              </div>
-
-              <button
-                onClick={() => deleteIdea(i.id)}
-                style={deleteBtn}
-              >
-                X
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-
-
-function IntentionsCard() {
-  const [date, setDate] = useState(
-    getTodayStr()
-  )
-  const [text, setText] = useState('')
-  const [recent, setRecent] = useState<any[]>([])
-
-  // load today's intention + last 5
-  const fetchIntentions = async () => {
-    // today
-    const { data: today } = await supabase
-      .from('intentions')
-      .select('*')
-     .eq('date', date)
-      .maybeSingle()
-
-    if (today) setText(today.intention)
-    else setText('')
-
-    // last 5 days
-    const { data } = await supabase
-      .from('intentions')
-      .select('*')
-      .order('date', { ascending: false })
-      .limit(5)
-
-    if (data) setRecent(data)
-  }
-
-  useEffect(() => {
-    fetchIntentions()
-  }, [date])
-
-  const save = async () => {
-  const { data, error } = await supabase
-    .from('intentions')
-    .upsert(
-      {
-        date,
-        intention: text,
-      },
-      { onConflict: 'date' }
-    )
-
-  console.log('SAVE RESULT:', { data, error })
-
-  if (error) {
-    alert(error.message)
-  }
-
-  fetchIntentions()
-}
-
-
-
-
-  
-  return (
-    <div style={card}>
-  <div style={headerStyle('#f97316')}>Intention</div>
-
-  <div style={{ padding: 12 }}>
-    {/* DATE AT TOP */}
-    <div style={{ marginBottom: 10 }}>
-      <input
-        style={smallInput}
-        type="date"
-        value={date}
-        onChange={(e) => setDate(e.target.value)}
-      />
-    </div>
-
-    {/* LABEL */}
-    <div style={{ marginBottom: 6, fontWeight: 500 }}>
-      Today I will...
-    </div>
-
-    {/* FULL WIDTH TEXT */}
-    <textarea
-      style={{
-        width: '100%',
-        height: 120,
-        padding: 10,
-        borderRadius: 8,
-        border: '1px solid #ccc',
-        resize: 'vertical',
-      }}
-      value={text}
-      onChange={(e) => setText(e.target.value)}
-      placeholder="Today I will."
-    />
-
-    <button style={filterBtn} onClick={save}>
-      Save
-    </button>
-
-    {/* LAST 5 DAYS */}
-    <div style={{ marginTop: 20 }}>
-      <h4>Last 5 Days</h4>
-
-      {recent?.map((item) => (
-        <div key={item.id} style={taskRow}>
-          <div style={{ width: 100 }}>
-            {item.date}
-          </div>
-          <div>{item.intention}</div>
-        </div>
-      ))}
-    </div>
-  </div>
-</div>
-  )
-}
-
-function DayRatingCard() {
-  
-  const [recent, setRecent] = useState<any[]>([])
-  const [chartData, setChartData] = useState<any[]>([])
-  const [date, setDate] = useState(
-    getTodayStr()
-  )
-  const [text, setText] = useState('')
-  const [rating, setRating] = useState(0)
-  const getColor = (r: number) => {
-  if (r <= 3) return '#ef4444'   // red
-  if (r <= 6) return '#f59e0b'   // orange
-  if (r <= 8) return '#3b82f6'   // blue
-  return '#22c55e'               // green
-}
-
-  const emojis = ['😞', '😐', '🙂', '😊', '😄']
-
-  const fetchRating = async () => {
-  // current day
-  const { data } = await supabase
-    .from('day_ratings')
-    .select('*')
-    .eq('rating_date', date)
-    .maybeSingle()
-
-  if (data) {
-    setText(data.what_went_well || '')
-    setRating(data.rating ?? 0)
-  } else {
-    setText('')
-    setRating(0)
-  }
-
-  // last 5 days
-  const { data: recentData } = await supabase
-    .from('day_ratings')
-    .select('*')
-    .order('rating_date', { ascending: false })
-    .limit(5)
-
-  if (recentData) setRecent(recentData)
-
-    const { data: chart } = await supabase
-  .from('day_ratings')
-  .select('*')
-  .order('rating_date', { ascending: true })
-  .limit(10)
-
-if (chart) setChartData(chart)
-}
-  useEffect(() => {
-    fetchRating()
-  }, [date])
-
-  const save = async () => {
-  await supabase.from('day_ratings').upsert(
-    {
-      rating_date: date,
-      what_went_well: text,
-      rating,
-    },
-    { onConflict: 'rating_date' }
-  )
-
-  await fetchRating()   // 👈 THIS is the fix
-}
-
-  return (
-  <div style={card}>
-  <div style={headerStyle('#3b82f6')}>Rate the Day</div>
-
-  <div style={{ padding: 12 }}>
-    {/* DATE AT TOP */}
-    <div style={{ marginBottom: 10 }}>
-      <input
-        style={smallInput}
-        type="date"
-        value={date}
-        onChange={(e) => setDate(e.target.value)}
-      />
-    </div>
-
-    {/* TEXT */}
-    <div style={{ marginBottom: 6, fontWeight: 500 }}>
-      What went well
-    </div>
-
-    <textarea
-      style={{
-        width: '100%',
-        height: 120,
-        padding: 10,
-        borderRadius: 8,
-        border: '1px solid #ccc',
-        resize: 'vertical',
-      }}
-      value={text}
-      onChange={(e) => setText(e.target.value)}
-      placeholder="What went well..."
-    />
-
-    {/* RATING */}
- <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
-  {[...Array(11)]?.map((_, i) => (
-    <button
-      key={i}
-      onClick={() => setRating(i)}
-      style={{
-        width: 32,
-        height: 32,
-        borderRadius: 6,
-        border: rating === i ? '2px solid #3b82f6' : '1px solid #ccc',
-        background: 'white',
-        cursor: 'pointer',
-        fontWeight: 600,
-         color: getColor(i) 
-      }}
-    >
-      {i}
-    </button>
-  ))}
-</div>
-
-    <button style={filterBtn} onClick={save}>
-      Save
-    </button>
-    <div style={{ marginTop: 20 }}>
-  <h4>Last 5 Days</h4>
-
-  {recent?.map((item) => (
-    <div key={item.id} style={taskRow}>
-      <div style={{ width: 100 }}>
-        {item.rating_date}
-      </div>
-
-      <div style={{ width: 50 }}>
-        {item.rating}
-      </div>
-
-      <div>{item.what_went_well}</div>
-    </div>
-  ))}
-</div>
-  </div>
-</div>  )
-}
-
-
-function CompletedTasksCard() {
- const today = new Date()
- 
-
-const twoDaysAgo = new Date()
-twoDaysAgo.setDate(today.getDate() - 2)
-
-const format = (d: Date) => {
-  return `${d.getFullYear()}-${
-    String(d.getMonth() + 1).padStart(2, '0')
-  }-${String(d.getDate()).padStart(2, '0')}`
-}
-
-
-
-  const [startDate, setStartDate] = useState(format(today))
-  const [endDate, setEndDate] = useState(format(today))
-  const [tasks, setTasks] = useState<any[]>([])
-
-  const fetchCompleted = async () => {
-    let query = supabase
-      .from('tasks')
-      .select('*')
-      .eq('completed', true)
-      .order('comp_date', { ascending: false })
-
-    if (startDate) query = query.gte('comp_date', startDate)
-    if (endDate) query = query.lte('comp_date', endDate)
-
-    const { data } = await query
-    if (data) setTasks(data)
-  }
-
-  useEffect(() => {
-  fetchCompleted()
-}, [startDate, endDate])
-
-  return (
-    <div style={card}>
-      <div style={headerStyle('#0ea5e9')}><h2>Completed Tasks</h2>
-       
-          </div>
-      
-
-      {/* Filter */}
-      <div style={row }>
-        <div style={{ padding: '12px 16px' }}>
-        <input
-          style={smallInput}
-          type="date"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-        />
-        <input
-          style={smallInput}
-          type="date"
-          value={endDate}
-          onChange={(e) => setEndDate(e.target.value)}
-        />
-        <button style={filterBtn} onClick={fetchCompleted}>
-          Filter
-        </button>
-      </div>
-      </div>
-      
-
-      {/* List */}
-      <div style={{ padding: '12px 16px' }}>
-        
-      <div style={{ marginTop: 10 }}>
-        {tasks.length === 0 && <div>No completed tasks</div>}
-
-        {tasks?.map((task) => (
-          <div key={task.id} style={taskRow}>
-            <span style={{ flex: 2 }}>
-              <strong>{task.title}</strong>
-            </span>
-
-            <span style={{ flex: 1 }}>
-              {task.comp_date || '-'}
-            </span>
-
-            <span style={{ flex: 1 }}>
-              {task.status || '-'}
-            </span>
-          </div>
-        ))}
-      </div></div>
-      
-    </div>
-  )
-}
-
-function QuoteCard() {
-  const [quote, setQuote] = useState('')
-
-  useEffect(() => {
-  const updateQuote = () => {
-    const today = new Date()
-
-    const dayNumber = Math.floor(
-      today.getTime() / (1000 * 60 * 60 * 24)
-    )
-
-    const index = dayNumber % quotes.length
-    setQuote(quotes[index])
-  }
-
-  updateQuote()
-
-  const now = new Date()
-  const msUntilMidnight =
-    new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate() + 1
-    ).getTime() - now.getTime()
-
-  const timeout = setTimeout(updateQuote, msUntilMidnight)
-
-  return () => clearTimeout(timeout)
-}, [])
-  return (
-    <div style={card}>
-      <div style={headerStyle('#6366f1')}>
-        Quote of the Day
-      </div>
-
-      <div style={{
-        height:200,
-  padding: 16,
-  fontStyle: 'italic',
-  fontSize: 15,
-  lineHeight: 1.5,
-  textAlign: 'center'
-}}>
-       {quote || ''}
-      </div>
-    </div>
-  )
-}
-
-
-// STYLES
-const styles = {  page: {
-
-    background: '#e5e7eb',
-    minHeight: '100vh',
-    display: 'flex',
-    justifyContent: 'center',
-    paddingTop: 40,
-
-  color: '#d01880'  // 👈 ADD THIS
-  },
-
-container: {
-  background: '#f3f4f6',
-  padding: 20,
-  width: '100%',
-  maxWidth: 1100,      // ~2/3 feel but responsive
-  margin: '0 auto',
-
-  color: '#c21313'  // 👈 ADD THIS
-},
-  title: {
-    textAlign: 'center' as const,
-    marginBottom: 20,
-  },
-cards: {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(3, 1fr)', // ✅ force 3 columns
-  gap: 20,
-},
-}
-
-function HabitsCard() {
-  
-  useEffect(() => {
-  generateHabitLogs()
-  fetchHabits()
-}, [])
-  const todayStr = getTodayStr()
-const [y, m, d] = todayStr.split('-').map(Number)
-
-const displayDate = new Date(y, m - 1, d).toLocaleDateString('en-US', {
-  month: 'short',
-  day: 'numeric',
-})
-  const today = new Date()
-  const [currentDate, setCurrentDate] = useState(getTodayStr())
-  const weekday = today.getDay()
-
-  const [habits, setHabits] = useState<any[]>([])
-  const [logs, setLogs] = useState<any[]>([])
-  const [newHabit, setNewHabit] = useState('')
-
-  const [frequencyType, setFrequencyType] = useState('daily')
-  const [intervalDays, setIntervalDays] = useState(3)
-  const [habitWeekday, setHabitWeekday] = useState(6)
-
-  const [showCelebration, setShowCelebration] = useState(true)
-
-  // FETCH
-  const fetchHabits = async () => {
-    const { data } = await supabase.from('habits').select('*')
-    if (data) setHabits(data)
-
-    const { data: logData } = await supabase
-      .from('habit_logs')
-      .select('*')
-     .eq('log_date', getTodayStr())
-
-    if (logData) setLogs(logData)
-  }
-
-  useEffect(() => {
-    fetchHabits()
-  }, [])
-
-useEffect(() => {
-  const now = new Date()
-
-  const msUntilMidnight =
-    new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate() + 1
-    ).getTime() - now.getTime()
-
-  const timeout = setTimeout(() => {
-    setCurrentDate(getTodayStr())
-  }, msUntilMidnight)
-
-  return () => clearTimeout(timeout)
-}, [])
-
-
-  // LOGIC
-  const isDueToday = (habit: any) => {
-    if (habit.frequency_type === 'daily') return true
-
-    if (habit.frequency_type === 'weekly') {
-      return habit.weekday === weekday
-    }
-
-    if (habit.frequency_type === 'interval') {
-      const start = new Date(habit.start_date)
-      const diff = Math.floor(
-        (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
-      )
-      return diff % habit.interval_days === 0
-    }
-
-    return false
-  }
-
-const isCompleted = (habitId: string) => {
-  return logs.find(
-    (l) =>
-      l.habit_id === habitId &&
-      l.log_date === getTodayStr()
-  )?.completed ?? false
-}
-
-  const dueHabits = habits.filter(isDueToday)
-
-  const allCompleted =
-    dueHabits.length > 0 &&
-    dueHabits.every((h) => isCompleted(h.id))
-
-  const alreadyShownToday =
-  typeof window !== 'undefined' &&
-  localStorage.getItem('celebration_' + currentDate) === 'true'
-  
-const shouldCelebrate =
-  allCompleted && showCelebration && !alreadyShownToday
-
-  // RESET celebration when habits change
- useEffect(() => {
-  if (allCompleted && !alreadyShownToday) {
-    localStorage.setItem('celebration_' + currentDate, 'true')
-  }
-}, [allCompleted])
-
-  // ACTIONS
- const toggleHabit = async (habitId: string) => {
-  const today = getTodayStr()
-
-  // 🔍 get the correct log directly from DB
-  const { data: log, error: fetchError } = await supabase
-  .from('habit_logs')
-  .select('*')
-  .eq('habit_id', habitId)
-  .eq('log_date', today)
-  .maybeSingle()
-
-  console.log('FOUND LOG:', log, fetchError)
-
-  if (!log) {
-  console.log('Creating missing log...')
-
-  const { data: newLog } = await supabase
-    .from('habit_logs')
-    .insert([
-      {
-        habit_id: habitId,
-        log_date: today,
-        completed: true // since user just checked it
-      }
-    ])
-    .select()
-    .single()
-
-  fetchHabits()
-  return
-}
-  // 🔄 update completion
-  const { error: updateError } = await supabase
-    .from('habit_logs')
-    .update({ completed: !log.completed })
-    .eq('id', log.id)
-
-  console.log('UPDATE ERROR:', updateError)
-
-  fetchHabits()
-}
-
-
-  const getFrequencyLabel = (habit: any) => {
-  if (habit.frequency_type === 'daily') return 'Daily'
-
-  if (habit.frequency_type === 'interval') {
-    return `Every ${habit.interval_days} days`
-  }
-
-  if (habit.frequency_type === 'weekly') {
-    return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][habit.weekday]
-  }
-
-  return ''
-}
-
-  const deleteHabit = async (id: string) => {
-  // delete logs first
-  await supabase
-    .from('habit_logs')
-    .delete()
-    .eq('habit_id', id)
-
-  // then delete habit
-  await supabase
-    .from('habits')
-    .delete()
-    .eq('id', id)
-
-  fetchHabits()
-}
-  const addHabit = async () => {
-    if (!newHabit) return
-
-    await supabase.from('habits').insert([
-      {
-        name: newHabit,
-        frequency_type: frequencyType,
-        interval_days:
-          frequencyType === 'interval' ? intervalDays : null,
-        weekday:
-          frequencyType === 'weekly' ? habitWeekday : null,
-        start_date: currentDate,
-      },
-    ])
-
-    setNewHabit('')
-    fetchHabits()
-  }
-  const sortedHabits = [...dueHabits].sort((a, b) => {
-  const aDone = isCompleted(a.id)
-  const bDone = isCompleted(b.id)
-
-  return Number(aDone) - Number(bDone)
-})
-  return (
-    <div style={card}>
-      <div style={headerStyle('#22c55e')}>
-        Habits — {displayDate}
-      </div>
-
-      <div style={{ padding: 12 }}>
-        
-        {/* 🎆 CELEBRATION */}
-        {shouldCelebrate && (
-          <div style={{ textAlign: 'center', marginBottom: 20,  }}>
-            <img
-              src="/fireworks.gif"
-              alt="celebration"
-             style={{
- 
-    maxHeight: 200,
-    objectFit: 'contain',
-    borderRadius: 12
-  }}
-            />
-
-            <div style={{ marginTop: 10, fontWeight: 600 }}>
-              All habits complete! 🔥
-            </div>
-
-            <button
-              style={filterBtn}
-              onClick={() => setShowCelebration(false)}
-            >
-              Done celebrating 🙂
-            </button>
-          </div>
-        )}
-
-        {/* ➕ ADD HABIT */}
-        <div style={{ marginTop: 10 }}>
-          <input
-            style={input}
-            placeholder="New habit"
-            value={newHabit}
-            onChange={(e) => setNewHabit(e.target.value)}
-          />
-
-         <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-  <select
-    value={frequencyType}
-    onChange={(e) => setFrequencyType(e.target.value)}
-    style={smallInput}
-  >
-    <option value="daily">Daily</option>
-    <option value="interval">Every X Days</option>
-    <option value="weekly">Specific Day</option>
-  </select>
-
-  <button style={addBtn} onClick={addHabit}>
-    +
-  </button>
-</div>
-
-          {frequencyType === 'interval' && (
-            <div style={{ marginTop: 8 }}>
-              <input
-                type="number"
-                min="1"
-                value={intervalDays}
-                onChange={(e) =>
-                  setIntervalDays(Number(e.target.value))
-                }
-                style={smallInput}
-              />
-              <span style={{ marginLeft: 6 }}>days</span>
-            </div>
-          )}
-
-          {frequencyType === 'weekly' && (
-            <div style={{ marginTop: 8 }}>
-              <select
-                value={habitWeekday}
-                onChange={(e) =>
-                  setHabitWeekday(Number(e.target.value))
-                }
-                style={smallInput}
-              >
-                <option value={0}>Sunday</option>
-                <option value={1}>Monday</option>
-                <option value={2}>Tuesday</option>
-                <option value={3}>Wednesday</option>
-                <option value={4}>Thursday</option>
-                <option value={5}>Friday</option>
-                <option value={6}>Saturday</option>
-              </select>
-            </div>
-          )}
-
-         
-        </div>
-
-
-
-
-
-
-
-
-        {/* 📋 HABIT LIST */}
-   <div
-  style={{
-    marginTop: 8,
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: 10,
-  }}
->
-  {sortedHabits?.map((habit) => {
-    const done = isCompleted(habit.id)
-
-    return (
-      <div
-        key={habit.id}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '6px 10px',
-          borderRadius: 9,
-          background: done ? '#dcfce7' : '#f3f4f6',
-          border: '1px solid #e5e7eb',
-
-          // 🔥 THESE ARE THE IMPORTANT ONES
-          width: 'auto',
-          flex: '0 0 auto',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        <input
-          type="checkbox"
-          checked={done}
-          onChange={() => toggleHabit(habit.id)}
-          style={{ transform: 'scale(1.2)' }}
-        />
-
-        <span
-          style={{
-            textDecoration: done ? 'line-through' : 'none',
-          }}
-        >
-          {habit?.name || ''}
-        </span>
-
-        <span style={{ fontSize: 11, color: '#6b7280' }}>
-          {getFrequencyLabel(habit)}
-        </span>
-
-        <button
-  onClick={() => {
-  if (confirm('Delete this habit?')) {
-    deleteHabit(habit.id)
-  }
-}}
-    style={{
-    marginLeft: 6,
-    width: 18,
-    height: 18,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: '#000000',      // red
-    color: 'white',             // white X
-    border: 'none',
-    borderRadius: 4,            // small square rounding
-    cursor: 'pointer',
-    fontSize: 12,
-    lineHeight: 1,
-  }}
->
-  ×
-</button>
-      </div>
-    )
-  })}
-</div>
-
-
-
-
-
-
-
-
-
-
-
-      </div>
-    </div>
-  )
-}
-function Celebration() {
-  return (
-    <div
-      style={{
-        textAlign: 'center',
-        
-        padding: 20,
-        position: 'relative',
-      }}
-    >
-      {/* Firework Image */}
-      <img
-        src="/fireworks.gif"
-        alt="celebration"
-        style={{
-          
-          borderRadius: 15,
-          width: 200,
-          height: 200,
-          objectFit: 'contain',
-          animation: 'pop 0.6s ease-out',
-        }}
-      />
-
-      {/* Text */}
-      <div style={{ marginTop: 10, fontSize: 18, fontWeight: 600 }}>
-        All habits complete! 🔥
-      </div>
-
-      <div style={{ fontSize: 14, color: '#6b7280' }}>
-        Strong finish today
-      </div>
-    </div>
-  )
-}
-
-function AffirmationCard() {
-  
-  const [affirmation, setAffirmation] = useState('')
-
-useEffect(() => {
-  const today = new Date()
-
-  const dayNumber = Math.floor(
-    today.getTime() / (1000 * 60 * 60 * 24)
-  )
-
-  const index = dayNumber % affirmations.length
-
-  setAffirmation(affirmations[index])
-}, [])
-
-  return (
-    <div style={card}>
-      <div style={headerStyle('#ec4899')}>Affirmation</div>
-
-      <div style={{
-     height:200,
-       padding: 16,
-  fontStyle: 'italic',
-  fontSize: 15,
-  lineHeight: 1.5,
-  textAlign: 'center'
-}}>
-        {affirmation}
-      </div>
-    </div>
-  )
-}
-
-
-
-function NotesSearchCard() {
-  const [date, setDate] = useState('')
-  const [tag, setTag] = useState('')
-  const [keyword, setKeyword] = useState('')
-  const [taskId, setTaskId] = useState('')
-  const [results, setResults] = useState<any[]>([])
-
- const search = async () => {
-  let query = supabase
-    .from('dailynotes')
-    .select('*')
-    .order('date', { ascending: false })   // ✅ FIXED
-
-  const cleanKeyword = keyword.trim()
-  const cleanTag = tag.trim()
-  const cleanDate = date.trim()
-
-  if (cleanDate) {
-    query = query.eq('date', cleanDate)   // ✅ FIXED
-  }
-
-  if (cleanTag) {
-    query = query.ilike('tag', `%${cleanTag}%`)
-  }
-
-  if (cleanKeyword) {
-    query = query.ilike('note', `%${cleanKeyword}%`)
-  }
-
-  const { data, error } = await query
-
-  console.log('RESULTS:', data, error)
-
-  setResults(data || [])
-}
-  return (
-    <div style={card}>
-      <div style={headerStyle('#6366f1')}>Search Notes</div>
-
-      <div style={{ padding: 12 }}>
-        {/* FILTERS */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          
-          <input
-            style={smallInput}
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
-
-          <input
-            style={smallInput}
-            placeholder="tag"
-            value={tag}
-            onChange={(e) => setTag(e.target.value)}
-          />
-
-          <input
-            style={input}
-            placeholder="keyword"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-          />
-
-          <input
-            style={smallInput}
-            placeholder="task #"
-            value={taskId}
-            onChange={(e) => setTaskId(e.target.value)}
-          />
-
-          <button style={filterBtn} onClick={search}>
-            Search
-          </button>
-        </div>
-
-        {/* RESULTS */}
-        <div style={{ marginTop: 15 }}>
-          {results.length === 0 && <div>No results</div>}
-
-          {results?.map((n) => (
-            <div key={n.id} style={taskRow}>
-              
-              <div style={{ width: 90 }}>
-               
-    {n?.date ? new Date(n.date).toLocaleDateString() : ''}
-
-              </div>
-
-              <div style={{ flex: 1, display: 'flex', gap: 8 }}>
-                <div>{n.note}</div>
-
-                {n.tag && (
-                  <span
-                    style={{
-                      background: '#f3e8ff',
-                      color: '#9333ea',
-                      padding: '2px 6px',
-                      borderRadius: 12,
-                      fontSize: 10
-                    }}
-                  >
-                    #{n.tag}
-                  </span>
-                )}
-
-                {n.task_id && (
-                  <span style={{ fontSize: 11, color: '#555' }}>
-                    task:{n.task_id}
-                  </span>
-                )}
-              </div>
-
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// RECAP EXPORT CARD
-// Pulls completed tasks, notes, day rating and intention for a date range
-// and builds one Markdown recap you can download or copy into the daily log.
-function RecapExportCard() {
-  const [startDate, setStartDate] = useState(getTodayStr())
-  const [endDate, setEndDate] = useState(getTodayStr())
-  const [preview, setPreview] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState('')
-
-  const buildRecap = async () => {
-    setBusy(true)
-    setMsg('')
-
-    // local-day window for created_at (timestamp) filtering
-    const toLocal = (s: string) => {
-      const [y, m, d] = s.split('-').map(Number)
-      return new Date(y, m - 1, d)
-    }
-    const rangeStart = toLocal(startDate)
-    const rangeEnd = toLocal(endDate)
-    rangeEnd.setDate(rangeEnd.getDate() + 1)
-    const localDay = (ts: string) => {
-      const d = new Date(ts)
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
-        2,
-        '0'
-      )}-${String(d.getDate()).padStart(2, '0')}`
-    }
-
-    const [tasksRes, newRes, notesRes, ratingsRes, intentRes] = await Promise.all([
-      supabase
-        .from('tasks')
-        .select('*')
-        .eq('completed', true)
-        .gte('comp_date', startDate)
-        .lte('comp_date', endDate)
-        .order('comp_date'),
-      supabase
-        .from('tasks')
-        .select('*')
-        .is('parent_id', null) // skip auto-generated recurring copies
-        .gte('created_at', rangeStart.toISOString())
-        .lt('created_at', rangeEnd.toISOString())
-        .order('created_at'),
-      supabase
-        .from('dailynotes')
-        .select('*')
-        .gte('date', startDate)
-        .lte('date', endDate)
-        .order('created_at'),
-      supabase
-        .from('day_ratings')
-        .select('*')
-        .gte('rating_date', startDate)
-        .lte('rating_date', endDate),
-      supabase
-        .from('intentions')
-        .select('*')
-        .gte('date', startDate)
-        .lte('date', endDate),
-    ])
-
-    const err =
-      tasksRes.error ||
-      newRes.error ||
-      notesRes.error ||
-      ratingsRes.error ||
-      intentRes.error
-    if (err) {
-      setBusy(false)
-      setMsg('Error: ' + err.message)
-      return ''
-    }
-
-    const tasks = tasksRes.data || []
-    const added = (newRes.data || []).map((t: any) => ({
-      ...t,
-      added_date: localDay(t.created_at),
-    }))
-    const notes = notesRes.data || []
-    const ratings = ratingsRes.data || []
-    const intents = intentRes.data || []
-
-    // every date in range that has something
-    const dates = Array.from(
-      new Set([
-        ...tasks.map((t: any) => t.comp_date),
-        ...added.map((t: any) => t.added_date),
-        ...notes.map((n: any) => n.date),
-        ...ratings.map((r: any) => r.rating_date),
-        ...intents.map((i: any) => i.date),
-      ])
-    )
-      .filter(Boolean)
-      .sort()
-
-    const fmtDay = (d: string) => {
-      const [y, m, day] = d.split('-').map(Number)
-      return new Date(y, m - 1, day).toLocaleDateString('en-US', {
-        weekday: 'long',
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      })
-    }
-
-    const range =
-      startDate === endDate ? startDate : `${startDate} to ${endDate}`
-    let md = `# Daily Recap: ${range}\n`
-
-    if (dates.length === 0) {
-      md += `\n_No tasks done or added, and no notes, rating or intention recorded._\n`
-    }
-
-    for (const d of dates) {
-      md += `\n## ${fmtDay(d)}\n`
-
-      const intent = intents.find((i: any) => i.date === d)
-      if (intent?.intention) {
-        md += `\n### Intention\n${intent.intention.trim()}\n`
-      }
-
-      const done = tasks.filter((t: any) => t.comp_date === d)
-      md += `\n### Tasks Done (${done.length})\n`
-      if (done.length === 0) md += `- none\n`
-      done.forEach((t: any) => {
-        const extras = [t.priority, t.status].filter(Boolean).join(', ')
-        md += `- #${t.id} ${t.title}${extras ? ` (${extras})` : ''}\n`
-      })
-
-      const newOnes = added.filter((t: any) => t.added_date === d)
-      md += `\n### New Tasks Added (${newOnes.length})\n`
-      if (newOnes.length === 0) md += `- none\n`
-      newOnes.forEach((t: any) => {
-        const extras = [
-          t.priority,
-          t.status,
-          t.due_date ? `due ${t.due_date}` : '',
-          t.frequency_type && t.frequency_type !== 'once'
-            ? t.frequency_type
-            : '',
-          t.completed ? 'done' : '',
-        ]
-          .filter(Boolean)
-          .join(', ')
-        md += `- #${t.id} ${t.title}${extras ? ` (${extras})` : ''}\n`
-      })
-
-      const dayNotes = notes.filter((n: any) => n.date === d)
-      if (dayNotes.length > 0) {
-        md += `\n### Notes\n`
-        dayNotes.forEach((n: any) => {
-          md += `- ${String(n.note || '').trim().replace(/\n+/g, ' ')}${
-            n.tag ? ` #${n.tag}` : ''
-          }\n`
-        })
-      }
-
-      const r = ratings.find((x: any) => x.rating_date === d)
-      if (r) {
-        md += `\n### Day Rating: ${r.rating ?? '-'}/10\n`
-        if (r.what_went_well) {
-          md += `What went well: ${r.what_went_well.trim()}\n`
-        }
-      }
-    }
-
-    setPreview(md)
-    setBusy(false)
-    return md
-  }
-
-  const download = async () => {
-    const md = await buildRecap()
-    if (!md) return
-    const name =
-      startDate === endDate
-        ? `recap-${startDate}.md`
-        : `recap-${startDate}_to_${endDate}.md`
-    const blob = new Blob([md], { type: 'text/markdown' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = name
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
-    setMsg('Downloaded ' + name)
-  }
-
-  const copy = async () => {
-    const md = await buildRecap()
-    if (!md) return
-    try {
-      await navigator.clipboard.writeText(md)
-      setMsg('Copied to clipboard')
-    } catch {
-      setMsg('Copy blocked. Select the preview text and copy it.')
-    }
-  }
-
-  return (
-    <div style={card}>
-      <div style={headerStyle('#0f766e')}>Export Daily Recap</div>
-
-      <div style={{ padding: 12 }}>
-        <div style={{ ...row, flexWrap: 'wrap', alignItems: 'center' }}>
-          <input
-            style={smallInput}
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-          />
-          <input
-            style={smallInput}
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-          />
-          <button
-            style={{ ...filterBtn, marginTop: 0 }}
-            onClick={buildRecap}
-            disabled={busy}
-          >
-            Preview
-          </button>
-          <button
-            style={{ ...filterBtn, marginTop: 0, background: '#0f766e' }}
-            onClick={download}
-            disabled={busy}
-          >
-            Download .md
-          </button>
-          <button
-            style={{ ...filterBtn, marginTop: 0, background: '#475569' }}
-            onClick={copy}
-            disabled={busy}
-          >
-            Copy
-          </button>
-        </div>
-
-        {msg && (
-          <div style={{ marginTop: 8, fontSize: 13, color: '#0f766e' }}>
-            {msg}
-          </div>
-        )}
-
-        {preview && (
-          <textarea
-            readOnly
-            value={preview}
-            style={{
-              width: '100%',
-              height: 260,
-              marginTop: 10,
-              padding: 10,
-              borderRadius: 8,
-              border: '1px solid #ccc',
-              fontFamily: 'ui-monospace, Menlo, monospace',
-              fontSize: 13,
-              resize: 'vertical',
-            }}
-          />
-        )}
-      </div>
-    </div>
-  )
-}
-
-const twoThirds = {
-  gridColumn: 'span 3', // ✅ takes 2 out of 3 columns
-}
-const aThird = {
-  gridColumn: 'span 2', // ✅ takes 2 out of 3 columns
-}
-const oneThird = {
-  gridColumn: 'span 1', // ✅ takes 2 out of 3 columns
-}
-
- const card = {
-  border: '1px solid #ddd',
-  borderRadius: 12,
-  background: '#fff',
-  overflow: 'hidden',
- boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
-}
-
-const row = {
-  display: 'flex',
-  gap: 8,
-  marginTop: 10,
-}
-
-const input = {
-  flex: 1,
-  padding: 8,
-  borderRadius: 6,
-  border: '1px solid #ccc',
-}
-const deleteBtn = {
-  background: '#ef4444',
-  color: 'white',
-  border: 'none',
-  padding: '4px 8px',
-  borderRadius: 6,
-  cursor: 'pointer',
-}
-
-const smallInput = {
-  width: 120,
-  padding: 8,
-  borderRadius: 6,
-  border: '1px solid #ccc',
-}
-
-const addBtn = {
-  background: '#22c55e',
-  color: 'white',
-  border: 'none',
-  padding: '0 12px',
-  borderRadius: 6,
-}
-
-const filterBtn = {
-  background: '#3b82f6',
-  color: 'white',
-  border: 'none',
-  padding: '8px 12px',
-  borderRadius: 6,
-  marginTop: 10,
-}
-
-const editBtn = {
-  background: '#f59e0b',
-  color: 'white',
-  border: 'none',
-  padding: '6px 10px',
-  borderRadius: 6,
-}
-
-const taskRow = {
-  display: 'flex',
-  gap: 10,
-  padding: 8,
-  border: '1px solid #eee',
-  borderRadius: 6,
-  marginTop: 6,
-}
