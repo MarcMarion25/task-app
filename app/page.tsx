@@ -624,6 +624,9 @@ export default function Home() {
 <div style={{ ...twoThirds, marginBottom: 20 }}>
   <NotesSearchCard />
 </div>
+<div style={{ ...twoThirds, marginBottom: 20 }}>
+  <RecapExportCard />
+</div>
 
 
 </div>
@@ -2696,6 +2699,228 @@ function NotesSearchCard() {
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// RECAP EXPORT CARD
+// Pulls completed tasks, notes, day rating and intention for a date range
+// and builds one Markdown recap you can download or copy into the daily log.
+function RecapExportCard() {
+  const [startDate, setStartDate] = useState(getTodayStr())
+  const [endDate, setEndDate] = useState(getTodayStr())
+  const [preview, setPreview] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const buildRecap = async () => {
+    setBusy(true)
+    setMsg('')
+
+    const [tasksRes, notesRes, ratingsRes, intentRes] = await Promise.all([
+      supabase
+        .from('tasks')
+        .select('*')
+        .eq('completed', true)
+        .gte('comp_date', startDate)
+        .lte('comp_date', endDate)
+        .order('comp_date'),
+      supabase
+        .from('dailynotes')
+        .select('*')
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('created_at'),
+      supabase
+        .from('day_ratings')
+        .select('*')
+        .gte('rating_date', startDate)
+        .lte('rating_date', endDate),
+      supabase
+        .from('intentions')
+        .select('*')
+        .gte('date', startDate)
+        .lte('date', endDate),
+    ])
+
+    const err =
+      tasksRes.error || notesRes.error || ratingsRes.error || intentRes.error
+    if (err) {
+      setBusy(false)
+      setMsg('Error: ' + err.message)
+      return ''
+    }
+
+    const tasks = tasksRes.data || []
+    const notes = notesRes.data || []
+    const ratings = ratingsRes.data || []
+    const intents = intentRes.data || []
+
+    // every date in range that has something
+    const dates = Array.from(
+      new Set([
+        ...tasks.map((t: any) => t.comp_date),
+        ...notes.map((n: any) => n.date),
+        ...ratings.map((r: any) => r.rating_date),
+        ...intents.map((i: any) => i.date),
+      ])
+    )
+      .filter(Boolean)
+      .sort()
+
+    const fmtDay = (d: string) => {
+      const [y, m, day] = d.split('-').map(Number)
+      return new Date(y, m - 1, day).toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    }
+
+    const range =
+      startDate === endDate ? startDate : `${startDate} to ${endDate}`
+    let md = `# Daily Recap: ${range}\n`
+
+    if (dates.length === 0) {
+      md += `\n_No tasks, notes, rating or intention recorded._\n`
+    }
+
+    for (const d of dates) {
+      md += `\n## ${fmtDay(d)}\n`
+
+      const intent = intents.find((i: any) => i.date === d)
+      if (intent?.intention) {
+        md += `\n### Intention\n${intent.intention.trim()}\n`
+      }
+
+      const done = tasks.filter((t: any) => t.comp_date === d)
+      md += `\n### Tasks Done (${done.length})\n`
+      if (done.length === 0) md += `- none\n`
+      done.forEach((t: any) => {
+        const extras = [t.priority, t.status].filter(Boolean).join(', ')
+        md += `- ${t.title}${extras ? ` (${extras})` : ''}\n`
+      })
+
+      const dayNotes = notes.filter((n: any) => n.date === d)
+      if (dayNotes.length > 0) {
+        md += `\n### Notes\n`
+        dayNotes.forEach((n: any) => {
+          md += `- ${String(n.note || '').trim().replace(/\n+/g, ' ')}${
+            n.tag ? ` #${n.tag}` : ''
+          }\n`
+        })
+      }
+
+      const r = ratings.find((x: any) => x.rating_date === d)
+      if (r) {
+        md += `\n### Day Rating: ${r.rating ?? '-'}/10\n`
+        if (r.what_went_well) {
+          md += `What went well: ${r.what_went_well.trim()}\n`
+        }
+      }
+    }
+
+    setPreview(md)
+    setBusy(false)
+    return md
+  }
+
+  const download = async () => {
+    const md = await buildRecap()
+    if (!md) return
+    const name =
+      startDate === endDate
+        ? `recap-${startDate}.md`
+        : `recap-${startDate}_to_${endDate}.md`
+    const blob = new Blob([md], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    setMsg('Downloaded ' + name)
+  }
+
+  const copy = async () => {
+    const md = await buildRecap()
+    if (!md) return
+    try {
+      await navigator.clipboard.writeText(md)
+      setMsg('Copied to clipboard')
+    } catch {
+      setMsg('Copy blocked. Select the preview text and copy it.')
+    }
+  }
+
+  return (
+    <div style={card}>
+      <div style={headerStyle('#0f766e')}>Export Daily Recap</div>
+
+      <div style={{ padding: 12 }}>
+        <div style={{ ...row, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input
+            style={smallInput}
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+          />
+          <input
+            style={smallInput}
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+          />
+          <button
+            style={{ ...filterBtn, marginTop: 0 }}
+            onClick={buildRecap}
+            disabled={busy}
+          >
+            Preview
+          </button>
+          <button
+            style={{ ...filterBtn, marginTop: 0, background: '#0f766e' }}
+            onClick={download}
+            disabled={busy}
+          >
+            Download .md
+          </button>
+          <button
+            style={{ ...filterBtn, marginTop: 0, background: '#475569' }}
+            onClick={copy}
+            disabled={busy}
+          >
+            Copy
+          </button>
+        </div>
+
+        {msg && (
+          <div style={{ marginTop: 8, fontSize: 13, color: '#0f766e' }}>
+            {msg}
+          </div>
+        )}
+
+        {preview && (
+          <textarea
+            readOnly
+            value={preview}
+            style={{
+              width: '100%',
+              height: 260,
+              marginTop: 10,
+              padding: 10,
+              borderRadius: 8,
+              border: '1px solid #ccc',
+              fontFamily: 'ui-monospace, Menlo, monospace',
+              fontSize: 13,
+              resize: 'vertical',
+            }}
+          />
+        )}
       </div>
     </div>
   )
