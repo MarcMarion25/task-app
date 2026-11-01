@@ -935,7 +935,7 @@ function DayRatingCard() {
 
 function ProjectsCard() {
   const [projects, setProjects] = useState<any[]>([])
-  const [showCompleted, setShowCompleted] = useState(true)
+  const [showCompleted, setShowCompleted] = useState(false) // hide 100% done by default
 
   const [name, setName] = useState('')
   const [dueDate, setDueDate] = useState('')
