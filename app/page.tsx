@@ -209,6 +209,8 @@ export default function Home() {
   // bumps whenever a task is completed so the Completed card refreshes
   const [taskVersion, setTaskVersion] = useState(0)
   const bumpTasks = () => setTaskVersion((v) => v + 1)
+  // bumps after an import so the Tasks card refreshes
+  const [importVersion, setImportVersion] = useState(0)
 
   return (
     <div style={styles.page}>
@@ -223,7 +225,10 @@ export default function Home() {
             <QuoteCard />
           </div>
           <div style={span(3)}>
-            <TasksCard onChanged={bumpTasks} />
+            <TasksCard onChanged={bumpTasks} refreshKey={importVersion} />
+          </div>
+          <div style={span(3)}>
+            <ImportTasksCard onImported={() => setImportVersion((v) => v + 1)} />
           </div>
           <div style={span(3)}>
             <NotesCard />
@@ -303,7 +308,13 @@ function QuoteCard() {
    TASKS
    ========================================================================= */
 
-function TasksCard({ onChanged }: { onChanged: () => void }) {
+function TasksCard({
+  onChanged,
+  refreshKey,
+}: {
+  onChanged: () => void
+  refreshKey: number
+}) {
   // add form
   const [title, setTitle] = useState('')
   const [dueDate, setDueDate] = useState('')
@@ -347,6 +358,12 @@ function TasksCard({ onChanged }: { onChanged: () => void }) {
     run()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // refresh when tasks change elsewhere (e.g. an import)
+  useEffect(() => {
+    if (refreshKey > 0) fetchTasks()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey])
 
   const addTask = async () => {
     if (!title) return
@@ -556,6 +573,387 @@ function TasksCard({ onChanged }: { onChanged: () => void }) {
             )}
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+/* =========================================================================
+   IMPORT TASKS
+   CSV file or pasted text. With a header row, columns are matched by name:
+   title, due_date, status, priority, frequency, interval_days, weekday.
+   Without a header, each line is one task title.
+   ========================================================================= */
+
+const IMPORT_TEMPLATE =
+  'title,due_date,status,priority,frequency,interval_days,weekday\n' +
+  'Call bank re line of credit,2026-11-05,open,high,once,,\n' +
+  'Review AP aging,,,medium,weekly,,Mon\n' +
+  'Back up laptop,2026-11-01,,low,interval,14,\n'
+
+/** column name aliases -> field */
+const IMPORT_COLUMNS: Record<string, string> = {
+  title: 'title',
+  task: 'title',
+  name: 'title',
+  due_date: 'due_date',
+  due: 'due_date',
+  duedate: 'due_date',
+  date: 'due_date',
+  status: 'status',
+  priority: 'priority',
+  frequency: 'frequency_type',
+  frequency_type: 'frequency_type',
+  repeat: 'frequency_type',
+  interval_days: 'interval_days',
+  interval: 'interval_days',
+  every_x_days: 'interval_days',
+  weekday: 'weekday',
+  day: 'weekday',
+}
+
+type ImportRow = {
+  title: string
+  due_date: string | null
+  status: string
+  priority: string
+  frequency_type: string
+  interval_days: number | null
+  weekday: number | null
+  problem: string // blank = OK to import
+}
+
+/** split CSV text into rows of cells; handles quoted cells with commas/quotes */
+const parseCsv = (text: string): string[][] => {
+  const rows: string[][] = []
+  let row: string[] = []
+  let cell = ''
+  let inQuotes = false
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (inQuotes) {
+      if (ch === '"' && text[i + 1] === '"') {
+        cell += '"'
+        i++
+      } else if (ch === '"') {
+        inQuotes = false
+      } else {
+        cell += ch
+      }
+    } else if (ch === '"') {
+      inQuotes = true
+    } else if (ch === ',' || ch === '\t') {
+      row.push(cell)
+      cell = ''
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++
+      row.push(cell)
+      rows.push(row)
+      row = []
+      cell = ''
+    } else {
+      cell += ch
+    }
+  }
+  row.push(cell)
+  rows.push(row)
+
+  return rows.filter((r) => r.some((c) => c.trim() !== ''))
+}
+
+/** accepts YYYY-MM-DD or M/D/YYYY (Excel style); returns YYYY-MM-DD or null */
+const normalizeDate = (s: string): string | null | 'bad' => {
+  const v = s.trim()
+  if (!v) return null
+
+  let y = 0
+  let mo = 0
+  let d = 0
+  let m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+  if (m) {
+    y = +m[1]
+    mo = +m[2]
+    d = +m[3]
+  } else {
+    m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/)
+    if (!m) return 'bad'
+    y = m[3].length === 2 ? 2000 + +m[3] : +m[3]
+    mo = +m[1]
+    d = +m[2]
+  }
+
+  // reject impossible dates like 13/45 or 2/30
+  const check = new Date(y, mo - 1, d)
+  if (check.getFullYear() !== y || check.getMonth() !== mo - 1 || check.getDate() !== d) {
+    return 'bad'
+  }
+  return `${y}-${pad(mo)}-${pad(d)}`
+}
+
+const normalizeWeekday = (s: string): number | null | 'bad' => {
+  const v = s.trim().toLowerCase()
+  if (!v) return null
+  if (/^[0-6]$/.test(v)) return Number(v)
+  const i = WEEKDAYS_SHORT.findIndex((d) => v.startsWith(d.toLowerCase()))
+  return i >= 0 ? i : 'bad'
+}
+
+const normalizeFrequency = (s: string) => {
+  const v = s.trim().toLowerCase()
+  if (!v || v === 'one-time' || v === 'one time' || v === 'none') return 'once'
+  if (v.startsWith('every')) return 'interval'
+  return v
+}
+
+const buildImportRows = (text: string): ImportRow[] => {
+  const rows = parseCsv(text)
+  if (rows.length === 0) return []
+
+  const headerKeys = rows[0].map((h) => h.trim().toLowerCase().replace(/[\s-]+/g, '_'))
+  const hasHeader = headerKeys.some((h) => IMPORT_COLUMNS[h] === 'title')
+
+  // no header: every line is just a title (commas kept as part of the title)
+  if (!hasHeader) {
+    return text
+      .split(/\r?\n/)
+      .map((l) => l.replace(/^\s*([-*•]|\d+[.)])\s+/, '').trim()) // strip bullets / numbering
+      .filter(Boolean)
+      .map((title) => ({
+        title,
+        due_date: null,
+        status: '',
+        priority: '',
+        frequency_type: 'once',
+        interval_days: null,
+        weekday: null,
+        problem: '',
+      }))
+  }
+
+  const fields = headerKeys.map((h) => IMPORT_COLUMNS[h] || '')
+
+  return rows.slice(1).map((cells) => {
+    const get = (field: string) => {
+      const i = fields.indexOf(field)
+      return i >= 0 ? (cells[i] ?? '').trim() : ''
+    }
+
+    const problems: string[] = []
+
+    const title = get('title')
+    if (!title) problems.push('no title')
+
+    const due = normalizeDate(get('due_date'))
+    if (due === 'bad') problems.push('bad due date')
+
+    const priority = get('priority').toLowerCase()
+    if (priority && !['high', 'medium', 'low'].includes(priority)) {
+      problems.push('priority must be high/medium/low')
+    }
+
+    const frequency_type = normalizeFrequency(get('frequency_type'))
+    if (!['once', 'daily', 'weekly', 'monthly', 'interval'].includes(frequency_type)) {
+      problems.push('unknown frequency')
+    }
+
+    const intervalRaw = get('interval_days')
+    const interval_days = intervalRaw ? Number(intervalRaw) : null
+    if (frequency_type === 'interval' && !(interval_days && interval_days > 0)) {
+      problems.push('interval needs days')
+    }
+
+    const wd = normalizeWeekday(get('weekday'))
+    if (wd === 'bad') problems.push('bad weekday')
+    if (frequency_type === 'weekly' && wd === null && (due === null || due === 'bad')) {
+      problems.push('weekly needs weekday or due date')
+    }
+
+    return {
+      title,
+      due_date: due === 'bad' ? null : due,
+      status: get('status'),
+      priority,
+      frequency_type,
+      interval_days: frequency_type === 'interval' ? interval_days : null,
+      weekday: frequency_type === 'weekly' && wd !== 'bad' ? wd : null,
+      problem: problems.join('; '),
+    }
+  })
+}
+
+function ImportTasksCard({ onImported }: { onImported: () => void }) {
+  const [text, setText] = useState('')
+  const [rows, setRows] = useState<ImportRow[]>([])
+  const [defaultDue, setDefaultDue] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const preview = (source: string) => {
+    setMsg('')
+    setRows(buildImportRows(source))
+  }
+
+  const onFile = (file: File | undefined) => {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const content = String(reader.result || '')
+      setText(content)
+      preview(content)
+    }
+    reader.readAsText(file)
+  }
+
+  const downloadTemplate = () => {
+    const url = URL.createObjectURL(new Blob([IMPORT_TEMPLATE], { type: 'text/csv' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'task-import-template.csv'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const good = rows.filter((r) => !r.problem)
+  const bad = rows.length - good.length
+
+  const runImport = async () => {
+    if (good.length === 0) return
+    setBusy(true)
+
+    const payload = good.map((r) => ({
+      title: r.title,
+      due_date: r.due_date || defaultDue || null,
+      status: r.status,
+      priority: r.priority,
+      frequency_type: r.frequency_type,
+      interval_days: r.interval_days,
+      weekday: r.weekday,
+    }))
+
+    const { error } = await supabase.from('tasks').insert(payload)
+    setBusy(false)
+
+    if (error) {
+      setMsg('Import failed: ' + error.message)
+      return
+    }
+
+    setMsg(
+      `Imported ${payload.length} task${payload.length === 1 ? '' : 's'}` +
+        (bad ? `. Skipped ${bad} with problems.` : '.')
+    )
+    setRows([])
+    setText('')
+    onImported()
+  }
+
+  return (
+    <div style={card}>
+      <div style={headerStyle('#15803d')}>Import Tasks</div>
+
+      <div style={{ padding: 12 }}>
+        <div style={{ ...wrapRow, marginBottom: 8 }}>
+          <input
+            type="file"
+            accept=".csv,.txt,text/csv,text/plain"
+            onChange={(e) => {
+              onFile(e.target.files?.[0])
+              e.target.value = '' // allow re-picking the same file
+            }}
+          />
+          <button style={{ ...toggleBtn, margin: 0 }} onClick={downloadTemplate}>
+            Download CSV template
+          </button>
+        </div>
+
+        <textarea
+          style={{ ...textarea(110), fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 13 }}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={
+            'Paste a list (one task per line) or CSV with a header row:\n' +
+            'title,due_date,status,priority,frequency,interval_days,weekday'
+          }
+        />
+
+        <div style={{ ...wrapRow, marginTop: 8 }}>
+          <button style={{ ...filterBtn, marginTop: 0 }} onClick={() => preview(text)}>
+            Preview
+          </button>
+          <span style={{ fontSize: 13, color: '#374151' }}>Due date if blank:</span>
+          <input
+            style={smallInput}
+            type="date"
+            value={defaultDue}
+            onChange={(e) => setDefaultDue(e.target.value)}
+          />
+          {rows.length > 0 && (
+            <button
+              style={{ ...filterBtn, marginTop: 0, background: '#15803d' }}
+              onClick={runImport}
+              disabled={busy || good.length === 0}
+            >
+              {busy ? 'Importing…' : `Import ${good.length} task${good.length === 1 ? '' : 's'}`}
+            </button>
+          )}
+          {rows.length > 0 && (
+            <button
+              style={{ ...toggleBtn, margin: 0 }}
+              onClick={() => {
+                setRows([])
+                setMsg('')
+              }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {msg && <div style={{ marginTop: 8, fontSize: 13, color: '#15803d' }}>{msg}</div>}
+
+        {rows.length > 0 && (
+          <div style={{ marginTop: 10, overflowX: 'auto' }}>
+            <div style={{ fontSize: 13, marginBottom: 4, color: '#374151' }}>
+              {good.length} ready{bad ? `, ${bad} will be skipped` : ''}
+            </div>
+            <table style={importTable}>
+              <thead>
+                <tr>
+                  {['Title', 'Due', 'Status', 'Priority', 'Repeat', 'Check'].map((h) => (
+                    <th key={h} style={importCell}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i} style={{ background: r.problem ? '#fef2f2' : 'white' }}>
+                    <td style={importCell}>{r.title || '—'}</td>
+                    <td style={importCell}>{r.due_date || defaultDue || '-'}</td>
+                    <td style={importCell}>{r.status || '-'}</td>
+                    <td style={{ ...importCell, color: priorityTextColor(r.priority) }}>
+                      {r.priority || '-'}
+                    </td>
+                    <td style={importCell}>
+                      {r.frequency_type === 'interval'
+                        ? `every ${r.interval_days} days`
+                        : r.frequency_type === 'weekly' && r.weekday !== null
+                        ? `weekly (${WEEKDAYS_SHORT[r.weekday]})`
+                        : r.frequency_type}
+                    </td>
+                    <td style={{ ...importCell, color: r.problem ? '#dc2626' : '#16a34a' }}>
+                      {r.problem || 'OK'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1985,6 +2383,19 @@ const toggleBtn: CSSProperties = {
   background: 'white',
   cursor: 'pointer',
   fontSize: 12,
+}
+
+const importTable: CSSProperties = {
+  width: '100%',
+  borderCollapse: 'collapse',
+  fontSize: 13,
+  color: '#111827',
+}
+
+const importCell: CSSProperties = {
+  border: '1px solid #e5e7eb',
+  padding: '4px 6px',
+  textAlign: 'left',
 }
 
 const habitDeleteBtn: CSSProperties = {
