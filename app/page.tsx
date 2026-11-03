@@ -786,6 +786,7 @@ function ImportTasksCard({ onImported }: { onImported: () => void }) {
   const [text, setText] = useState('')
   const [rows, setRows] = useState<ImportRow[]>([])
   const [defaultDue, setDefaultDue] = useState('')
+  const [fileName, setFileName] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
 
@@ -856,14 +857,24 @@ function ImportTasksCard({ onImported }: { onImported: () => void }) {
 
       <div style={{ padding: 12 }}>
         <div style={{ ...wrapRow, marginBottom: 8 }}>
-          <input
-            type="file"
-            accept=".csv,.txt,text/csv,text/plain"
-            onChange={(e) => {
-              onFile(e.target.files?.[0])
-              e.target.value = '' // allow re-picking the same file
-            }}
-          />
+          {/* the label is the visible button; the real file input is hidden */}
+          <label style={uploadBtn}>
+            Upload CSV file
+            <input
+              type="file"
+              accept=".csv,.txt,text/csv,text/plain"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                setFileName(file?.name || '')
+                onFile(file)
+                e.target.value = '' // allow re-picking the same file
+              }}
+            />
+          </label>
+          <span style={{ fontSize: 13, color: '#374151' }}>
+            {fileName ? `Loaded: ${fileName}` : 'or paste tasks below'}
+          </span>
           <button style={{ ...toggleBtn, margin: 0 }} onClick={downloadTemplate}>
             Download CSV template
           </button>
@@ -890,20 +901,29 @@ function ImportTasksCard({ onImported }: { onImported: () => void }) {
             value={defaultDue}
             onChange={(e) => setDefaultDue(e.target.value)}
           />
-          {rows.length > 0 && (
-            <button
-              style={{ ...filterBtn, marginTop: 0, background: '#15803d' }}
-              onClick={runImport}
-              disabled={busy || good.length === 0}
-            >
-              {busy ? 'Importing…' : `Import ${good.length} task${good.length === 1 ? '' : 's'}`}
-            </button>
-          )}
+          <button
+            style={{
+              ...filterBtn,
+              marginTop: 0,
+              background: good.length ? '#15803d' : '#9ca3af',
+              cursor: good.length ? 'pointer' : 'not-allowed',
+            }}
+            onClick={runImport}
+            disabled={busy || good.length === 0}
+          >
+            {busy
+              ? 'Importing…'
+              : good.length
+              ? `Import ${good.length} task${good.length === 1 ? '' : 's'}`
+              : 'Import'}
+          </button>
           {rows.length > 0 && (
             <button
               style={{ ...toggleBtn, margin: 0 }}
               onClick={() => {
                 setRows([])
+                setText('')
+                setFileName('')
                 setMsg('')
               }}
             >
@@ -2383,6 +2403,17 @@ const toggleBtn: CSSProperties = {
   background: 'white',
   cursor: 'pointer',
   fontSize: 12,
+}
+
+const uploadBtn: CSSProperties = {
+  display: 'inline-block',
+  background: '#15803d',
+  color: 'white',
+  padding: '8px 14px',
+  borderRadius: 6,
+  fontWeight: 600,
+  fontSize: 14,
+  cursor: 'pointer',
 }
 
 const importTable: CSSProperties = {
